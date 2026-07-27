@@ -1,5 +1,3 @@
-import { env } from "cloudflare:workers";
-
 type D1 = {
   prepare(query: string): {
     bind(...values: unknown[]): ReturnType<D1["prepare"]>;
@@ -40,6 +38,7 @@ const truckIndexSql = "CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name
 const visitIndexSql = "CREATE INDEX IF NOT EXISTS visits_date_idx ON visits(visit_date)";
 
 async function database() {
+  const { env } = await import("cloudflare:workers");
   const db = (env as unknown as { DB: D1 }).DB;
   await db.batch([
     db.prepare(truckSql),
