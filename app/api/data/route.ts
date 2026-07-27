@@ -345,7 +345,19 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const id = Number(new URL(request.url).searchParams.get("id"));
+    const searchParams = new URL(request.url).searchParams;
+    const visitId = Number(searchParams.get("visitId"));
+    if (Number.isInteger(visitId) && visitId > 0) {
+      if (postgresUrl()) {
+        const pool = await postgres();
+        await pool.query("DELETE FROM visits WHERE id = $1", [visitId]);
+        return Response.json(await readAllPostgres(pool));
+      }
+      const db = await database();
+      await db.prepare("DELETE FROM visits WHERE id = ?").bind(visitId).run();
+      return Response.json(await readAll(db));
+    }
+    const id = Number(searchParams.get("id"));
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: "A valid truck id is required." }, { status: 400 });
     }

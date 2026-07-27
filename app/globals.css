@@ -78,6 +78,15 @@ h1 { margin:0; font-size:29px; letter-spacing:-.7px; }
 .resize-handle.start::after { left:4px; }
 .resize-handle.end { right:0; }
 .resize-handle.end::after { right:4px; }
+.context-menu-layer { position:fixed;inset:0;z-index:75; }
+.schedule-context-menu { position:fixed;min-width:190px;padding:8px;border:1px solid #42698c;border-radius:8px;background:#0c2239;box-shadow:0 15px 45px #000b;color:#fff;transform:translateY(4px); }
+.schedule-context-menu small,.schedule-context-menu strong { display:block;padding:4px 8px; }
+.schedule-context-menu small { color:#7f9ab5;font-size:8px;letter-spacing:1px;text-transform:uppercase; }
+.schedule-context-menu strong { margin-bottom:5px;font-size:11px; }
+.schedule-context-menu button { width:100%;padding:9px 10px;border:0;border-radius:5px;background:#12385d;color:#e9f4ff;text-align:left;font-size:11px;font-weight:750;cursor:pointer; }
+.schedule-context-menu button:hover { background:#185183; }
+.schedule-context-menu .delete-shift-action { background:#441c27;color:#ffb4bc; }
+.schedule-context-menu .delete-shift-action:hover { background:#6b2533;color:#fff; }
 .visit-block small,.visit-block strong,.visit-block span { display:block; }
 .visit-block small { font-size:9px; color:#deedff; }
 .visit-block strong { margin:5px 0; font-size:13px; }
