@@ -15,6 +15,8 @@ export const trucks = sqliteTable("trucks", {
   notes: text("notes").notNull().default(""),
   color: text("color").notNull().default("#1687ff"),
   availabilityJson: text("availability_json").notNull().default("[]"),
+  logoKey: text("logo_key").notNull().default(""),
+  logoUpdatedAt: text("logo_updated_at").notNull().default(""),
 });
 
 export const visits = sqliteTable("visits", {
