@@ -1,0 +1,1 @@
+ALTER TABLE `trucks` ADD `availability_json` text DEFAULT '[]' NOT NULL;
