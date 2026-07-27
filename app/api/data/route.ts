@@ -320,6 +320,29 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PATCH(request: Request) {
+  try {
+    const payload = await request.json() as Record<string, unknown>;
+    const id = number(payload.id);
+    const startTime = text(payload.startTime);
+    const endTime = text(payload.endTime);
+    if (!Number.isInteger(id) || id <= 0 || !/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+      return Response.json({ error: "A valid visit and time range are required." }, { status: 400 });
+    }
+    if (postgresUrl()) {
+      const pool = await postgres();
+      await pool.query("UPDATE visits SET start_time = $1, end_time = $2 WHERE id = $3", [startTime, endTime, id]);
+      return Response.json(await readAllPostgres(pool));
+    }
+    const db = await database();
+    await db.prepare("UPDATE visits SET start_time = ?, end_time = ? WHERE id = ?")
+      .bind(startTime, endTime, id).run();
+    return Response.json(await readAll(db));
+  } catch {
+    return Response.json({ error: "Unable to update this visit." }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const id = Number(new URL(request.url).searchParams.get("id"));
