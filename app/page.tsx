@@ -155,6 +155,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [visitDraft, setVisitDraft] = useState({ visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", truckId: 1 });
 
   useEffect(() => {
     async function hydrate() {
@@ -255,6 +256,29 @@ export default function Home() {
     }
   }
 
+  function openVisitModal(visitDate = dateKey(selectedDate), startTime = "11:00", truckId = selectedTruckId) {
+    const endTime = timeFromMinutes(Math.min(1200, minutes(startTime) + 180));
+    setVisitDraft({ visitDate, startTime, endTime, truckId });
+    setSelectedTruckId(truckId);
+    setModal("visit");
+  }
+
+  async function deleteVisit(visitId: number) {
+    if (!window.confirm("Delete this scheduled visit?")) return;
+    const previous = data;
+    setData((current) => ({ ...current, visits: current.visits.filter((visit) => visit.id !== visitId) }));
+    try {
+      const response = await fetch(`/api/data?visitId=${visitId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Delete failed");
+      const next = await response.json() as AppData;
+      setData({ ...next, trucks: next.trucks.map(withAvailability) });
+      notify("Scheduled visit deleted");
+    } catch {
+      setData(previous);
+      notify("That visit could not be deleted");
+    }
+  }
+
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
@@ -328,7 +352,7 @@ export default function Home() {
           {nav.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}
         </nav>
         <label className="search"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search trucks, cuisine, contacts…" /></label>
-        <button className="primary" onClick={() => setModal("visit")}>＋ Schedule Visit</button>
+        <button className="primary" onClick={() => openVisitModal()}>＋ Schedule Visit</button>
       </header>
 
       {view === "dashboard" && (
@@ -350,21 +374,21 @@ export default function Home() {
               <article><span className="metric-icon blue">★</span><div><strong>{Math.round(data.trucks.reduce((sum, t) => sum + t.reliability, 0) / Math.max(1, data.trucks.length))}%</strong><p>Avg Reliability</p><small>Across active trucks</small></div></article>
             </div>
 
-            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} />
+            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />
             <div className="legend"><span><i className="blue-swatch" />Confirmed</span><span><i className="green-swatch" />Available</span><span><i className="stripe-swatch" />Conflict</span><span><i className="amber-swatch" />Documents expiring</span></div>
           </section>
           <aside className="right-rail">
             <TruckProfile truck={selectedTruck} onView={() => setView("trucks")} />
-            <Assistant recommendation={recommendations[0]} selectedDate={selectedDate} onSchedule={(truckId) => { setSelectedTruckId(truckId); setModal("visit"); }} />
+            <Assistant recommendation={recommendations[0]} selectedDate={selectedDate} onSchedule={(truckId) => openVisitModal(dateKey(selectedDate), "11:00", truckId)} />
           </aside>
         </div>
       )}
 
-      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => setModal("visit")} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} />}
+      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />}
       {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} />}
       {view === "insights" && <Insights data={data} />}
 
-      {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={selectedTruckId} selectedDate={dateKey(selectedDate)} onSubmit={submitVisit} /></Modal>}
+      {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={visitDraft.truckId} selectedDate={visitDraft.visitDate} startTime={visitDraft.startTime} endTime={visitDraft.endTime} onSubmit={submitVisit} /></Modal>}
       {modal === "truck" && <Modal title="Create truck profile" subtitle="Keep contact, compliance, and scheduling preferences together." onClose={() => setModal(null)}><TruckForm onSubmit={submitTruck} /></Modal>}
       {pendingDeleteId !== null && <DeleteTruckModal truck={data.trucks.find((truck) => truck.id === pendingDeleteId)} visitCount={data.visits.filter((visit) => visit.truckId === pendingDeleteId).length} onCancel={() => setPendingDeleteId(null)} onConfirm={() => deleteTruck(pendingDeleteId)} />}
       {toast && <div className="toast">✓ {toast}</div>}
@@ -384,15 +408,20 @@ type DragState = {
   timelineWidth: number;
 };
 
-function ScheduleBoard({ visits, trucks, overlaps, onSelect, onUpdateVisit }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void }) {
+type ScheduleContextMenu =
+  | { kind: "visit"; x: number; y: number; visit: Visit; truck: Truck }
+  | { kind: "open"; x: number; y: number; time: string; truckId?: number };
+
+function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; visitDate: string; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void }) {
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [contextMenu, setContextMenu] = useState<ScheduleContextMenu | null>(null);
   const timelineStart = 600;
   const timelineEnd = 1200;
   const timelineSpan = timelineEnd - timelineStart;
   const shown = visits;
 
   function beginDrag(event: ReactPointerEvent<HTMLElement>, visit: Visit, mode: DragState["mode"]) {
-    if (visit.id < 0) return;
+    if (visit.id < 0 || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -429,10 +458,22 @@ function ScheduleBoard({ visits, trucks, overlaps, onSelect, onUpdateVisit }: { 
     setDrag(null);
   }
 
+  function timeAtPointer(event: React.MouseEvent<HTMLElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const snapped = Math.round((timelineStart + ratio * timelineSpan) / 15) * 15;
+    return timeFromMinutes(Math.min(timelineEnd - 30, snapped));
+  }
+
+  function openTimelineMenu(event: React.MouseEvent<HTMLElement>, truckId?: number) {
+    event.preventDefault();
+    setContextMenu({ kind: "open", x: event.clientX, y: event.clientY, time: timeAtPointer(event), truckId });
+  }
+
   return <div className="schedule-board">
     <div className="schedule-help"><span>Drag a shift to move it</span><span>Drag either edge to resize</span><span>15-minute increments</span></div>
     <div className="time-head"><strong>TRUCKS</strong>{Array.from({ length: 10 }, (_, i) => <span key={i}>{formatTime(`${10 + i}:00`).replace(":00", "")}</span>)}</div>
-    {!shown.length && <div className="empty-schedule"><strong>No trucks scheduled for this day</strong><span>Choose another date or add a visit.</span></div>}
+    {!shown.length && <div className="empty-schedule" onContextMenu={openTimelineMenu}><strong>No trucks scheduled for this day</strong><span>Right-click anywhere here to add a visit.</span></div>}
     {shown.map((visit) => {
       const truck = trucks.find((t) => t.id === visit.truckId)!;
       const active = drag?.visitId === visit.id ? drag : null;
@@ -443,13 +484,18 @@ function ScheduleBoard({ visits, trucks, overlaps, onSelect, onUpdateVisit }: { 
       const conflict = overlaps.some((pair) => pair.some((item) => item.id === visit.id));
       return <div className="timeline-row" key={visit.id}>
         <button className="truck-label" onClick={() => onSelect(truck.id)}><span className="avatar" style={{ background: truck.color }}>{initials(truck.name)}</span><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>
-        <div className="timeline"><div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
+        <div className="timeline" onContextMenu={(event) => openTimelineMenu(event, truck.id)}><div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContextMenu({ kind: "visit", x: event.clientX, y: event.clientY, visit, truck }); }} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
           {visit.id > 0 && <button className="resize-handle start" aria-label={`Change ${truck.name} start time`} onPointerDown={(event) => beginDrag(event, visit, "start")} />}
           <small>{formatTime(timeFromMinutes(start))} – {formatTime(timeFromMinutes(end))}</small><strong>{truck.name}</strong><span>{visit.status}</span>
           {visit.id > 0 && <button className="resize-handle end" aria-label={`Change ${truck.name} end time`} onPointerDown={(event) => beginDrag(event, visit, "end")} />}
         </div></div>
       </div>;
     })}
+    {contextMenu && <div className="context-menu-layer" onMouseDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}>
+      <div className="schedule-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
+        {contextMenu.kind === "visit" ? <><small>{contextMenu.truck.name}</small><strong>{formatTime(contextMenu.visit.startTime)} – {formatTime(contextMenu.visit.endTime)}</strong><button className="delete-shift-action" onClick={() => { setContextMenu(null); onDeleteVisit(contextMenu.visit.id); }}>× Delete shift</button></> : <><small>OPEN TIME</small><strong>{formatTime(contextMenu.time)}</strong><button onClick={() => { setContextMenu(null); onAddVisit(visitDate, contextMenu.time, contextMenu.truckId); }}>＋ Add shift here</button></>}
+      </div>
+    </div>}
   </div>;
 }
 
@@ -470,7 +516,7 @@ function Assistant({ recommendation, selectedDate, onSchedule }: { recommendatio
   </article>;
 }
 
-function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelect, onUpdateVisit }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void }) {
+function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void }) {
   const [mode, setMode] = useState<"gantt" | "calendar">("gantt");
   const weekStart = addDays(selectedDate, -selectedDate.getDay() + 1);
   const days = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i));
@@ -480,7 +526,7 @@ function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelec
     <div className="section-heading"><div><p className="eyebrow">VISIT PLANNER</p><h1>Schedule</h1><p>Plan upcoming visits and adjust times directly on the schedule.</p></div><div className="heading-actions"><div className="view-toggle"><button className={mode === "gantt" ? "active" : ""} onClick={() => setMode("gantt")}>▤ Daily Gantt</button><button className={mode === "calendar" ? "active" : ""} onClick={() => setMode("calendar")}>▦ Calendar</button></div><button className="primary" onClick={onSchedule}>＋ Schedule Visit</button></div></div>
     <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(new Date("2026-07-27T12:00:00"))}>Today</button></div>
     <div className="week-strip schedule-week">{days.slice(0, 7).map((date) => <button key={dateKey(date)} className={dateKey(date) === dateKey(selectedDate) ? "selected" : ""} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></button>)}</div>
-    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} onSelect={onSelect} onUpdateVisit={onUpdateVisit} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
+    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
   </section>;
 }
 
@@ -504,8 +550,8 @@ function DeleteTruckModal({ truck, visitCount, onCancel, onConfirm }: { truck?: 
   return <div className="modal-backdrop"><section className="modal delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-truck-title"><p className="eyebrow">PERMANENT ACTION</p><h2 id="delete-truck-title">Delete {truck.name}?</h2><p>This will also remove {visitCount} scheduled {visitCount === 1 ? "visit" : "visits"} connected to this truck. This cannot be undone.</p><div className="modal-actions"><button className="secondary" onClick={onCancel}>Cancel</button><button className="danger-button solid" onClick={onConfirm}>Delete Truck</button></div></section></div>;
 }
 
-function VisitForm({ trucks, selectedTruckId, selectedDate, onSubmit }: { trucks: Truck[]; selectedTruckId: number; selectedDate: string; onSubmit: (e: FormEvent<HTMLFormElement>) => void }) {
-  return <form onSubmit={onSubmit} className="form-grid"><label className="full">Food truck<select name="truckId" defaultValue={selectedTruckId}>{trucks.map((truck) => <option value={truck.id} key={truck.id}>{truck.name} — {truck.cuisine}</option>)}</select></label><label>Date<input name="visitDate" type="date" defaultValue={selectedDate} required /></label><label>Expected demand<select name="expectedDemand" defaultValue="High"><option>High</option><option>Medium</option><option>Low</option></select></label><label>Start time<input name="startTime" type="time" defaultValue="11:00" required /></label><label>End time<input name="endTime" type="time" defaultValue="14:00" required /></label><label>Status<select name="status" defaultValue="Tentative"><option>Tentative</option><option>Confirmed</option><option>Cancelled</option></select></label><label>Notes<input name="notes" placeholder="Setup needs, event details…" /></label><button className="primary full" type="submit">Add to schedule</button></form>;
+function VisitForm({ trucks, selectedTruckId, selectedDate, startTime, endTime, onSubmit }: { trucks: Truck[]; selectedTruckId: number; selectedDate: string; startTime: string; endTime: string; onSubmit: (e: FormEvent<HTMLFormElement>) => void }) {
+  return <form onSubmit={onSubmit} className="form-grid"><label className="full">Food truck<select name="truckId" defaultValue={selectedTruckId}>{trucks.map((truck) => <option value={truck.id} key={truck.id}>{truck.name} — {truck.cuisine}</option>)}</select></label><label>Date<input name="visitDate" type="date" defaultValue={selectedDate} required /></label><label>Expected demand<select name="expectedDemand" defaultValue="High"><option>High</option><option>Medium</option><option>Low</option></select></label><label>Start time<input name="startTime" type="time" defaultValue={startTime} required /></label><label>End time<input name="endTime" type="time" defaultValue={endTime} required /></label><label>Status<select name="status" defaultValue="Tentative"><option>Tentative</option><option>Confirmed</option><option>Cancelled</option></select></label><label>Notes<input name="notes" placeholder="Setup needs, event details…" /></label><button className="primary full" type="submit">Add to schedule</button></form>;
 }
 
 function TruckForm({ onSubmit }: { onSubmit: (e: FormEvent<HTMLFormElement>) => void }) {
