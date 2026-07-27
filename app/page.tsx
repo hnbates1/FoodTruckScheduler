@@ -94,6 +94,18 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem("truckstop-data");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as AppData;
+        if (parsed.trucks?.length) {
+          setData(parsed);
+          setSelectedTruckId(parsed.trucks[0].id);
+        }
+      } catch {
+        window.localStorage.removeItem("truckstop-data");
+      }
+    }
     fetch("/api/data")
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((remote: AppData) => {
@@ -105,6 +117,10 @@ export default function Home() {
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!loading) window.localStorage.setItem("truckstop-data", JSON.stringify(data));
+  }, [data, loading]);
 
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i - selectedDate.getDay() + 1)), [selectedDate]);
   const dayVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
@@ -154,7 +170,7 @@ export default function Home() {
       const optimistic: Visit = { id: Date.now(), truckId: Number(payload.truckId), visitDate: String(payload.visitDate), startTime: String(payload.startTime), endTime: String(payload.endTime), status: String(payload.status), expectedDemand: String(payload.expectedDemand), notes: String(payload.notes ?? "") };
       setData((current) => ({ ...current, visits: [...current.visits, optimistic] }));
       setModal(null);
-      notify("Visit saved for this session");
+      notify("Visit saved on this device");
     }
   }
 
@@ -170,7 +186,7 @@ export default function Home() {
       const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 85, notes: String(payload.notes ?? ""), color: "#1687ff" };
       setData((current) => ({ ...current, trucks: [...current.trucks, optimistic] }));
       setModal(null);
-      notify("Truck profile saved for this session");
+      notify("Truck profile saved on this device");
     }
   }
 
