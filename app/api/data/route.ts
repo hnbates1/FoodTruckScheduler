@@ -21,6 +21,7 @@ const truckSql = `CREATE TABLE IF NOT EXISTS trucks (
   reliability INTEGER NOT NULL DEFAULT 85,
   notes TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT '#1687ff'
+  ,availability_json TEXT NOT NULL DEFAULT '[]'
 )`;
 
 const visitSql = `CREATE TABLE IF NOT EXISTS visits (
@@ -65,9 +66,19 @@ async function database() {
 }
 
 async function readAll(db: D1) {
-  const trucks = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color FROM trucks ORDER BY name").all();
+  const trucksResult = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color,availability_json AS availabilityJson FROM trucks ORDER BY name").all<Record<string, unknown>>();
   const visits = await db.prepare("SELECT id,truck_id AS truckId,visit_date AS visitDate,start_time AS startTime,end_time AS endTime,status,expected_demand AS expectedDemand,notes FROM visits ORDER BY visit_date,start_time").all();
-  return { trucks: trucks.results, visits: visits.results };
+  const trucks = trucksResult.results.map((truck) => {
+    let availability: unknown[] = [];
+    try {
+      availability = JSON.parse(String(truck.availabilityJson || "[]")) as unknown[];
+    } catch {
+      availability = [];
+    }
+    const { availabilityJson: _availabilityJson, ...rest } = truck;
+    return { ...rest, availability };
+  });
+  return { trucks, visits: visits.results };
 }
 
 export async function GET() {
@@ -80,11 +91,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json() as Record<string, string>;
+    const payload = await request.json() as Record<string, unknown>;
     const db = await database();
     if (payload.kind === "truck") {
-      await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry,payload.licenseExpiry,payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff").run();
+      await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry,payload.licenseExpiry,payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? [])).run();
     } else if (payload.kind === "visit") {
       await db.prepare("INSERT INTO visits (truck_id,visit_date,start_time,end_time,status,expected_demand,notes) VALUES (?,?,?,?,?,?,?)")
         .bind(Number(payload.truckId),payload.visitDate,payload.startTime,payload.endTime,payload.status,payload.expectedDemand,payload.notes ?? "").run();
@@ -94,5 +105,22 @@ export async function POST(request: Request) {
     return Response.json(await readAll(db), { status: 201 });
   } catch {
     return Response.json({ error: "Unable to save this record." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const id = Number(new URL(request.url).searchParams.get("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: "A valid truck id is required." }, { status: 400 });
+    }
+    const db = await database();
+    await db.batch([
+      db.prepare("DELETE FROM visits WHERE truck_id = ?").bind(id),
+      db.prepare("DELETE FROM trucks WHERE id = ?").bind(id),
+    ]);
+    return Response.json(await readAll(db));
+  } catch {
+    return Response.json({ error: "Unable to delete this truck." }, { status: 500 });
   }
 }
