@@ -7,6 +7,17 @@ type D1 = {
   batch(statements: ReturnType<D1["prepare"]>[]): Promise<unknown>;
 };
 
+type R2Bucket = {
+  get(key: string): Promise<{
+    body: BodyInit;
+    httpMetadata?: { contentType?: string };
+  } | null>;
+  put(key: string, value: Uint8Array, options?: {
+    httpMetadata?: { contentType?: string };
+  }): Promise<unknown>;
+  delete(key: string): Promise<unknown>;
+};
+
 type TruckInput = {
   id?: number;
   name?: unknown;
@@ -22,6 +33,7 @@ type TruckInput = {
   notes?: unknown;
   color?: unknown;
   availability?: unknown;
+  logoData?: unknown;
 };
 
 type VisitInput = {
@@ -47,6 +59,23 @@ function text(value: unknown, fallback = "") {
 function number(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function decodeLogo(value: unknown) {
+  if (typeof value !== "string" || !value || value.length > 500_000) return null;
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value);
+  if (!match) return null;
+  try {
+    const binary = atob(match[2]);
+    if (!binary.length || binary.length > 300_000) return null;
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return { bytes, dataUrl: value, mime: match[1] };
+  } catch {
+    return null;
+  }
 }
 
 function postgresUrl() {
@@ -82,7 +111,9 @@ async function postgres() {
     reliability INTEGER NOT NULL DEFAULT 85,
     notes TEXT NOT NULL DEFAULT '',
     color TEXT NOT NULL DEFAULT '#1687ff',
-    availability_json TEXT NOT NULL DEFAULT '[]'
+    availability_json TEXT NOT NULL DEFAULT '[]',
+    logo_data TEXT NOT NULL DEFAULT '',
+    logo_updated_at TEXT NOT NULL DEFAULT ''
   )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS visits (
     id SERIAL PRIMARY KEY,
@@ -96,6 +127,8 @@ async function postgres() {
   )`);
   await pool.query("CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name)");
   await pool.query("CREATE INDEX IF NOT EXISTS visits_date_idx ON visits(visit_date)");
+  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_data TEXT NOT NULL DEFAULT ''");
+  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_updated_at TEXT NOT NULL DEFAULT ''");
   return pool;
 }
 
@@ -104,7 +137,8 @@ async function readAllPostgres(pool: import("pg").Pool | import("pg").PoolClient
     pool.query(`SELECT id,name,cuisine,contact,phone,email,
       insurance_expiry AS "insuranceExpiry",license_expiry AS "licenseExpiry",
       preferred_start AS "preferredStart",preferred_end AS "preferredEnd",
-      reliability,notes,color,availability_json AS "availabilityJson"
+      reliability,notes,color,availability_json AS "availabilityJson",
+      (logo_data <> '') AS "hasLogo",logo_updated_at AS "logoVersion"
       FROM trucks ORDER BY name`),
     pool.query(`SELECT id,truck_id AS "truckId",visit_date AS "visitDate",
       start_time AS "startTime",end_time AS "endTime",status,
@@ -129,15 +163,17 @@ async function readAllPostgres(pool: import("pg").Pool | import("pg").PoolClient
 async function savePostgres(payload: Record<string, unknown>) {
   const pool = await postgres();
   if (payload.kind === "truck") {
+    const logo = decodeLogo(payload.logoData);
     await pool.query(
       `INSERT INTO trucks
-      (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,logo_data,logo_updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         text(payload.name), text(payload.cuisine), text(payload.contact), text(payload.phone),
         text(payload.email), text(payload.insuranceExpiry), text(payload.licenseExpiry),
         text(payload.preferredStart), text(payload.preferredEnd), 85, text(payload.notes),
-        "#1687ff", JSON.stringify(payload.availability ?? []),
+        "#1687ff", JSON.stringify(payload.availability ?? []), logo?.dataUrl ?? "",
+        logo ? String(Date.now()) : "",
       ],
     );
   } else if (payload.kind === "visit") {
@@ -170,16 +206,18 @@ async function importPostgres(pool: import("pg").Pool, data: AppDataInput = {}) 
     }
     const idMap = new Map<number, number>();
     for (const truck of data.trucks ?? []) {
+      const logo = decodeLogo(truck.logoData);
       const result = await client.query<{ id: number }>(
         `INSERT INTO trucks
-        (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+        (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,logo_data,logo_updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
         [
           text(truck.name), text(truck.cuisine), text(truck.contact), text(truck.phone),
           text(truck.email), text(truck.insuranceExpiry), text(truck.licenseExpiry),
           text(truck.preferredStart), text(truck.preferredEnd), number(truck.reliability, 85),
           text(truck.notes), text(truck.color, "#1687ff"),
-          JSON.stringify(truck.availability ?? []),
+          JSON.stringify(truck.availability ?? []), logo?.dataUrl ?? "",
+          logo ? String(Date.now()) : "",
         ],
       );
       if (truck.id && result.rows[0]) idMap.set(truck.id, result.rows[0].id);
@@ -220,8 +258,10 @@ const truckSql = `CREATE TABLE IF NOT EXISTS trucks (
   preferred_end TEXT NOT NULL,
   reliability INTEGER NOT NULL DEFAULT 85,
   notes TEXT NOT NULL DEFAULT '',
-  color TEXT NOT NULL DEFAULT '#1687ff'
-  ,availability_json TEXT NOT NULL DEFAULT '[]'
+  color TEXT NOT NULL DEFAULT '#1687ff',
+  availability_json TEXT NOT NULL DEFAULT '[]',
+  logo_key TEXT NOT NULL DEFAULT '',
+  logo_updated_at TEXT NOT NULL DEFAULT ''
 )`;
 
 const visitSql = `CREATE TABLE IF NOT EXISTS visits (
@@ -247,6 +287,13 @@ async function database() {
     db.prepare(truckIndexSql),
     db.prepare(visitIndexSql),
   ]);
+  const columns = await db.prepare("PRAGMA table_info(trucks)").all<{ name: string }>();
+  if (!columns.results.some((column) => column.name === "logo_key")) {
+    await db.prepare("ALTER TABLE trucks ADD COLUMN logo_key TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "logo_updated_at")) {
+    await db.prepare("ALTER TABLE trucks ADD COLUMN logo_updated_at TEXT NOT NULL DEFAULT ''").run();
+  }
   const count = await db.prepare("SELECT COUNT(*) AS count FROM trucks").all<{ count: number }>();
   if (!count.results[0]?.count) {
     await db.batch([
@@ -265,8 +312,13 @@ async function database() {
   return db;
 }
 
+async function objectStorage() {
+  const { env } = await import("cloudflare:workers");
+  return (env as unknown as { BUCKET: R2Bucket }).BUCKET;
+}
+
 async function readAll(db: D1) {
-  const trucksResult = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color,availability_json AS availabilityJson FROM trucks ORDER BY name").all<Record<string, unknown>>();
+  const trucksResult = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color,availability_json AS availabilityJson,(logo_key <> '') AS hasLogo,logo_updated_at AS logoVersion FROM trucks ORDER BY name").all<Record<string, unknown>>();
   const visits = await db.prepare("SELECT id,truck_id AS truckId,visit_date AS visitDate,start_time AS startTime,end_time AS endTime,status,expected_demand AS expectedDemand,notes FROM visits ORDER BY visit_date,start_time").all();
   const trucks = trucksResult.results.map((truck) => {
     let availability: unknown[] = [];
@@ -278,13 +330,49 @@ async function readAll(db: D1) {
     const rest = Object.fromEntries(
       Object.entries(truck).filter(([key]) => key !== "availabilityJson"),
     );
-    return { ...rest, availability };
+    return { ...rest, hasLogo: Boolean(truck.hasLogo), availability };
   });
   return { trucks, visits: visits.results };
 }
 
-export async function GET() {
+async function serveLogo(logoId: number) {
+  if (!Number.isInteger(logoId) || logoId <= 0) {
+    return new Response("Not found", { status: 404 });
+  }
+  if (postgresUrl()) {
+    const pool = await postgres();
+    const result = await pool.query<{ logo_data: string }>(
+      "SELECT logo_data FROM trucks WHERE id = $1",
+      [logoId],
+    );
+    const logo = decodeLogo(result.rows[0]?.logo_data);
+    if (!logo) return new Response("Not found", { status: 404 });
+    return new Response(logo.bytes, {
+      headers: {
+        "cache-control": "public, max-age=31536000, immutable",
+        "content-type": logo.mime,
+      },
+    });
+  }
+  const db = await database();
+  const result = await db.prepare("SELECT logo_key AS logoKey FROM trucks WHERE id = ?")
+    .bind(logoId).all<{ logoKey: string }>();
+  const key = result.results[0]?.logoKey;
+  if (!key) return new Response("Not found", { status: 404 });
+  const object = await (await objectStorage()).get(key);
+  if (!object) return new Response("Not found", { status: 404 });
+  return new Response(object.body, {
+    headers: {
+      "cache-control": "public, max-age=31536000, immutable",
+      "content-type": object.httpMetadata?.contentType || "image/webp",
+    },
+  });
+}
+
+export async function GET(request: Request) {
   try {
+    const logoId = Number(new URL(request.url).searchParams.get("logoId"));
+    if (Number.isInteger(logoId) && logoId > 0) return serveLogo(logoId);
     if (postgresUrl()) {
       return Response.json(await readAllPostgres(await postgres()));
     }
@@ -297,6 +385,9 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const payload = await request.json() as Record<string, unknown>;
+    if (payload.kind === "truck" && text(payload.logoData) && !decodeLogo(payload.logoData)) {
+      return Response.json({ error: "Choose a PNG, JPEG, or WebP logo under 5 MB." }, { status: 400 });
+    }
     if (postgresUrl()) {
       const result = await savePostgres(payload);
       if (!result) {
@@ -306,8 +397,16 @@ export async function POST(request: Request) {
     }
     const db = await database();
     if (payload.kind === "truck") {
-      await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
-        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry,payload.licenseExpiry,payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? [])).run();
+      const result = await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
+        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry ?? "",payload.licenseExpiry ?? "",payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? [])).all<{ id: number }>();
+      const logo = decodeLogo(payload.logoData);
+      const id = result.results[0]?.id;
+      if (logo && id) {
+        const key = `truck-logos/${id}`;
+        await (await objectStorage()).put(key, logo.bytes, { httpMetadata: { contentType: logo.mime } });
+        await db.prepare("UPDATE trucks SET logo_key = ?, logo_updated_at = ? WHERE id = ?")
+          .bind(key, String(Date.now()), id).run();
+      }
     } else if (payload.kind === "visit") {
       await db.prepare("INSERT INTO visits (truck_id,visit_date,start_time,end_time,status,expected_demand,notes) VALUES (?,?,?,?,?,?,?)")
         .bind(Number(payload.truckId),payload.visitDate,payload.startTime,payload.endTime,payload.status,payload.expectedDemand,payload.notes ?? "").run();
@@ -324,6 +423,37 @@ export async function PATCH(request: Request) {
   try {
     const payload = await request.json() as Record<string, unknown>;
     const id = number(payload.id);
+    if (payload.kind === "truckLogo") {
+      const logoData = text(payload.logoData);
+      const logo = decodeLogo(logoData);
+      if (!Number.isInteger(id) || id <= 0 || (logoData && !logo)) {
+        return Response.json({ error: "Choose a valid PNG, JPEG, or WebP logo." }, { status: 400 });
+      }
+      const version = logo ? String(Date.now()) : "";
+      if (postgresUrl()) {
+        const pool = await postgres();
+        await pool.query(
+          "UPDATE trucks SET logo_data = $1, logo_updated_at = $2 WHERE id = $3",
+          [logo?.dataUrl ?? "", version, id],
+        );
+        return Response.json(await readAllPostgres(pool));
+      }
+      const db = await database();
+      const existing = await db.prepare("SELECT logo_key AS logoKey FROM trucks WHERE id = ?")
+        .bind(id).all<{ logoKey: string }>();
+      const existingKey = existing.results[0]?.logoKey;
+      if (logo) {
+        const key = existingKey || `truck-logos/${id}`;
+        await (await objectStorage()).put(key, logo.bytes, { httpMetadata: { contentType: logo.mime } });
+        await db.prepare("UPDATE trucks SET logo_key = ?, logo_updated_at = ? WHERE id = ?")
+          .bind(key, version, id).run();
+      } else {
+        if (existingKey) await (await objectStorage()).delete(existingKey);
+        await db.prepare("UPDATE trucks SET logo_key = '', logo_updated_at = '' WHERE id = ?")
+          .bind(id).run();
+      }
+      return Response.json(await readAll(db));
+    }
     const startTime = text(payload.startTime);
     const endTime = text(payload.endTime);
     if (!Number.isInteger(id) || id <= 0 || !/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
@@ -367,6 +497,11 @@ export async function DELETE(request: Request) {
       return Response.json(await readAllPostgres(pool));
     }
     const db = await database();
+    const logo = await db.prepare("SELECT logo_key AS logoKey FROM trucks WHERE id = ?")
+      .bind(id).all<{ logoKey: string }>();
+    if (logo.results[0]?.logoKey) {
+      await (await objectStorage()).delete(logo.results[0].logoKey);
+    }
     await db.batch([
       db.prepare("DELETE FROM visits WHERE truck_id = ?").bind(id),
       db.prepare("DELETE FROM trucks WHERE id = ?").bind(id),
