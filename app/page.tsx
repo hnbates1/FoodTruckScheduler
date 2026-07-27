@@ -17,6 +17,9 @@ type Truck = {
   notes: string;
   color: string;
   availability: DayAvailability[];
+  hasLogo?: boolean;
+  logoVersion?: string;
+  logoData?: string;
 };
 
 type DayAvailability = {
@@ -128,8 +131,81 @@ function initials(name: string) {
 }
 
 function expiryState(value: string) {
+  if (!value) return "Not provided";
   const days = Math.ceil((new Date(`${value}T12:00:00`).getTime() - new Date("2026-07-27T12:00:00").getTime()) / 86400000);
   return days < 0 ? "Expired" : days <= 45 ? "Expiring" : "Valid";
+}
+
+function expiryClass(value: string) {
+  return expiryState(value).toLowerCase().replace(" ", "-");
+}
+
+function expiryLabel(value: string) {
+  if (!value) return "Not provided";
+  return `${expiryState(value)} through ${new Date(`${value}T12:00:00`).toLocaleDateString()}`;
+}
+
+function needsDocumentAttention(value: string) {
+  return value ? expiryState(value) !== "Valid" : false;
+}
+
+function logoSource(truck: Truck) {
+  if (truck.logoData) return truck.logoData;
+  if (!truck.hasLogo) return "";
+  return `/api/data?logoId=${truck.id}&v=${encodeURIComponent(truck.logoVersion || "1")}`;
+}
+
+function TruckAvatar({ truck, large = false }: { truck: Truck; large?: boolean }) {
+  const source = logoSource(truck);
+  return <span
+    className={`avatar ${large ? "large" : ""} ${source ? "has-logo" : ""}`}
+    style={{ backgroundColor: truck.color, backgroundImage: source ? `url("${source}")` : undefined }}
+    role="img"
+    aria-label={source ? `${truck.name} logo` : `${truck.name} initials`}
+  >{source ? "" : initials(truck.name)}</span>;
+}
+
+function resizeTruckLogo(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      reject(new Error("Choose a PNG, JPEG, or WebP image."));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      reject(new Error("Choose an image smaller than 5 MB."));
+      return;
+    }
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      try {
+        const size = 360;
+        const padding = 20;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("This browser could not prepare that image.");
+        const scale = Math.min((size - padding * 2) / image.naturalWidth, (size - padding * 2) / image.naturalHeight);
+        const width = image.naturalWidth * scale;
+        const height = image.naturalHeight * scale;
+        context.clearRect(0, 0, size, size);
+        context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+        const dataUrl = canvas.toDataURL("image/webp", 0.86);
+        if (!dataUrl || dataUrl.length > 500_000) throw new Error("That logo is still too large after resizing.");
+        resolve(dataUrl);
+      } catch (error) {
+        reject(error);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("That image could not be opened."));
+    };
+    image.src = objectUrl;
+  });
 }
 
 function withAvailability(truck: Truck): Truck {
@@ -231,7 +307,7 @@ export default function Home() {
     const response = await fetch("/api/data", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, ...payload }) });
     if (!response.ok) throw new Error("Save failed");
     const next = await response.json() as AppData;
-    setData(next);
+    setData({ ...next, trucks: next.trucks.map(withAvailability) });
   }
 
   async function updateVisit(visitId: number, startTime: string, endTime: string) {
@@ -253,6 +329,40 @@ export default function Home() {
     } catch {
       setData(previous);
       notify("That schedule change could not be saved");
+    }
+  }
+
+  async function updateTruckLogo(truckId: number, file: File | null) {
+    let logoData = "";
+    if (file) {
+      try {
+        logoData = await resizeTruckLogo(file);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : "That logo could not be prepared");
+        return;
+      }
+    }
+    const previous = data;
+    const localVersion = String(Date.now());
+    setData((current) => ({
+      ...current,
+      trucks: current.trucks.map((truck) => truck.id === truckId
+        ? { ...truck, hasLogo: Boolean(logoData), logoData, logoVersion: logoData ? localVersion : "" }
+        : truck),
+    }));
+    try {
+      const response = await fetch("/api/data", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "truckLogo", id: truckId, logoData }),
+      });
+      if (!response.ok) throw new Error("Logo update failed");
+      const next = await response.json() as AppData;
+      setData({ ...next, trucks: next.trucks.map(withAvailability) });
+      notify(file ? "Truck logo updated" : "Truck logo removed");
+    } catch {
+      setData(previous);
+      notify("That logo change could not be saved");
     }
   }
 
@@ -316,7 +426,7 @@ export default function Home() {
       setModal(null);
       notify("Truck profile created");
     } catch {
-      const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 85, notes: String(payload.notes ?? ""), color: "#1687ff", availability: payload.availability as DayAvailability[] };
+      const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 85, notes: String(payload.notes ?? ""), color: "#1687ff", availability: payload.availability as DayAvailability[], hasLogo: Boolean(payload.logoData), logoData: String(payload.logoData || ""), logoVersion: String(Date.now()) };
       setData((current) => ({ ...current, trucks: [...current.trucks, optimistic] }));
       setModal(null);
       notify("Truck profile saved on this device");
@@ -385,7 +495,7 @@ export default function Home() {
       )}
 
       {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />}
-      {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} />}
+      {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} />}
       {view === "insights" && <Insights data={data} />}
 
       {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={visitDraft.truckId} selectedDate={visitDraft.visitDate} startTime={visitDraft.startTime} endTime={visitDraft.endTime} onSubmit={submitVisit} /></Modal>}
@@ -483,7 +593,7 @@ function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdate
       const width = ((end - start) / timelineSpan) * 100;
       const conflict = overlaps.some((pair) => pair.some((item) => item.id === visit.id));
       return <div className="timeline-row" key={visit.id}>
-        <button className="truck-label" onClick={() => onSelect(truck.id)}><span className="avatar" style={{ background: truck.color }}>{initials(truck.name)}</span><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>
+        <button className="truck-label" onClick={() => onSelect(truck.id)}><TruckAvatar truck={truck} /><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>
         <div className="timeline" onContextMenu={(event) => openTimelineMenu(event, truck.id)}><div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContextMenu({ kind: "visit", x: event.clientX, y: event.clientY, visit, truck }); }} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
           {visit.id > 0 && <button className="resize-handle start" aria-label={`Change ${truck.name} start time`} onPointerDown={(event) => beginDrag(event, visit, "start")} />}
           <small>{formatTime(timeFromMinutes(start))} – {formatTime(timeFromMinutes(end))}</small><strong>{truck.name}</strong><span>{visit.status}</span>
@@ -503,8 +613,8 @@ function TruckProfile({ truck, onView }: { truck: Truck; onView: () => void }) {
   if (!truck) return null;
   return <article className="rail-card profile-card">
     <div className="card-title"><h2>Truck Profile</h2><span>⌃</span></div>
-    <div className="profile-head"><span className="avatar large" style={{ background: truck.color }}>{initials(truck.name)}</span><div><h3>{truck.name}</h3><p>{truck.cuisine}</p><strong className="rating">★ {(truck.reliability / 20).toFixed(1)}</strong></div></div>
-    <dl><div><dt>Contact</dt><dd>{truck.contact}</dd></div><div><dt>Phone</dt><dd>{truck.phone}</dd></div><div><dt>Email</dt><dd>{truck.email}</dd></div><div><dt>Insurance</dt><dd>{expiryState(truck.insuranceExpiry)} through {new Date(`${truck.insuranceExpiry}T12:00:00`).toLocaleDateString()}</dd></div><div><dt>Preferred hours</dt><dd>{formatTime(truck.preferredStart)} – {formatTime(truck.preferredEnd)}</dd></div><div><dt>Reliability</dt><dd className="lime">{truck.reliability}%</dd></div></dl>
+    <div className="profile-head"><TruckAvatar truck={truck} large /><div><h3>{truck.name}</h3><p>{truck.cuisine}</p><strong className="rating">★ {(truck.reliability / 20).toFixed(1)}</strong></div></div>
+    <dl><div><dt>Contact</dt><dd>{truck.contact}</dd></div><div><dt>Phone</dt><dd>{truck.phone}</dd></div><div><dt>Email</dt><dd>{truck.email}</dd></div><div><dt>Insurance</dt><dd>{expiryLabel(truck.insuranceExpiry)}</dd></div><div><dt>Preferred hours</dt><dd>{formatTime(truck.preferredStart)} – {formatTime(truck.preferredEnd)}</dd></div><div><dt>Reliability</dt><dd className="lime">{truck.reliability}%</dd></div></dl>
     <button className="secondary wide" onClick={onView}>View Full Profile</button>
   </article>;
 }
@@ -530,15 +640,53 @@ function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelec
   </section>;
 }
 
-function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete }: { trucks: Truck[]; selectedId: number; setSelectedId: (id: number) => void; onAdd: () => void; onDelete: (id: number) => void }) {
+function TruckLogoEditor({ truck, onChange }: { truck: Truck; onChange: (file: File | null) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+
+  async function chooseLogo(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    await onChange(file);
+    setBusy(false);
+  }
+
+  return <div className="logo-actions">
+    <label className="secondary logo-button">
+      {busy ? "Preparing logo…" : truck.hasLogo || truck.logoData ? "Change logo" : "＋ Add logo"}
+      <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ""; void chooseLogo(file); }} />
+    </label>
+    {(truck.hasLogo || truck.logoData) && <button className="text-button" disabled={busy} onClick={() => { setBusy(true); void onChange(null).finally(() => setBusy(false)); }}>Remove logo</button>}
+    <small>PNG, JPEG, or WebP. It will be resized automatically.</small>
+  </div>;
+}
+
+function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete, onLogoChange }: { trucks: Truck[]; selectedId: number; setSelectedId: (id: number) => void; onAdd: () => void; onDelete: (id: number) => void; onLogoChange: (truckId: number, file: File | null) => Promise<void> }) {
   const selected = trucks.find((t) => t.id === selectedId) ?? trucks[0];
-  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">VENDOR DIRECTORY</p><h1>Food Trucks</h1><p>Profiles, contact details, documents, and weekly availability.</p></div><button className="primary" onClick={onAdd}>＋ Add Truck</button></div>{trucks.length ? <div className="truck-layout"><div className="truck-grid">{trucks.map((truck) => <button className={`truck-card ${truck.id === selectedId ? "selected" : ""}`} key={truck.id} onClick={() => setSelectedId(truck.id)}><span className="avatar large" style={{ background: truck.color }}>{initials(truck.name)}</span><div><h3>{truck.name}</h3><p>{truck.cuisine}</p><span className={expiryState(truck.insuranceExpiry).toLowerCase()}>{expiryState(truck.insuranceExpiry)}</span></div><strong>{truck.reliability}%</strong></button>)}</div>{selected && <article className="detail-card"><div className="profile-head"><span className="avatar large" style={{ background: selected.color }}>{initials(selected.name)}</span><div><h2>{selected.name}</h2><p>{selected.cuisine}</p></div></div><dl><div><dt>Primary contact</dt><dd>{selected.contact}</dd></div><div><dt>Phone</dt><dd>{selected.phone}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Insurance expiration</dt><dd>{selected.insuranceExpiry}</dd></div><div><dt>Food license expiration</dt><dd>{selected.licenseExpiry}</dd></div></dl><h4>Weekly availability</h4><div className="availability-summary">{withAvailability(selected).availability.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Unavailable"}</span></div>)}</div><h4>Operations notes</h4><p>{selected.notes || "No notes yet."}</p><button className="danger-button" onClick={() => onDelete(selected.id)}>Delete Truck</button></article>}</div> : <div className="empty-state"><h2>No truck profiles yet</h2><p>Add your first vendor to begin scheduling visits.</p><button className="primary" onClick={onAdd}>＋ Add Truck</button></div>}</section>;
+  return <section className="content-page">
+    <div className="section-heading"><div><p className="eyebrow">VENDOR DIRECTORY</p><h1>Food Trucks</h1><p>Profiles, contact details, documents, and weekly availability.</p></div><button className="primary" onClick={onAdd}>＋ Add Truck</button></div>
+    {trucks.length ? <div className="truck-layout">
+      <div className="truck-grid">{trucks.map((truck) => <button className={`truck-card ${truck.id === selectedId ? "selected" : ""}`} key={truck.id} onClick={() => setSelectedId(truck.id)}>
+        <TruckAvatar truck={truck} large />
+        <div><h3>{truck.name}</h3><p>{truck.cuisine}</p><span className={expiryClass(truck.insuranceExpiry)}>{expiryState(truck.insuranceExpiry)}</span></div>
+        <strong>{truck.reliability}%</strong>
+      </button>)}</div>
+      {selected && <article className="detail-card">
+        <div className="profile-head"><TruckAvatar truck={selected} large /><div><h2>{selected.name}</h2><p>{selected.cuisine}</p></div></div>
+        <TruckLogoEditor truck={selected} onChange={(file) => onLogoChange(selected.id, file)} />
+        <dl><div><dt>Primary contact</dt><dd>{selected.contact}</dd></div><div><dt>Phone</dt><dd>{selected.phone}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Insurance expiration</dt><dd>{selected.insuranceExpiry || "Not provided"}</dd></div><div><dt>Food license expiration</dt><dd>{selected.licenseExpiry || "Not provided"}</dd></div></dl>
+        <h4>Weekly availability</h4>
+        <div className="availability-summary">{withAvailability(selected).availability.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Unavailable"}</span></div>)}</div>
+        <h4>Operations notes</h4><p>{selected.notes || "No notes yet."}</p>
+        <button className="danger-button" onClick={() => onDelete(selected.id)}>Delete Truck</button>
+      </article>}
+    </div> : <div className="empty-state"><h2>No truck profiles yet</h2><p>Add your first vendor to begin scheduling visits.</p><button className="primary" onClick={onAdd}>＋ Add Truck</button></div>}
+  </section>;
 }
 
 function Insights({ data }: { data: AppData }) {
   const cuisineCounts = Object.entries(data.trucks.reduce<Record<string, number>>((acc, truck) => { acc[truck.cuisine] = (acc[truck.cuisine] ?? 0) + 1; return acc; }, {}));
   const max = Math.max(...cuisineCounts.map(([, count]) => count), 1);
-  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">PERFORMANCE SIGNALS</p><h1>Insights</h1><p>Use the lineup you already have to identify gaps and scheduling risk.</p></div></div><div className="insight-grid"><article><span>ACTIVE ROSTER</span><strong>{data.trucks.length}</strong><p>food-truck partners</p></article><article><span>UPCOMING VISITS</span><strong>{data.visits.length}</strong><p>currently planned</p></article><article><span>COMPLIANCE RISK</span><strong>{data.trucks.filter((t) => expiryState(t.insuranceExpiry) !== "Valid").length}</strong><p>documents need attention</p></article></div><div className="analysis-card"><h2>Cuisine mix</h2><p>A varied lineup reduces repeat fatigue and gives associates more choice.</p>{cuisineCounts.map(([name, count]) => <div className="bar-row" key={name}><span>{name}</span><i><b style={{ width: `${(count / max) * 100}%` }} /></i><strong>{count}</strong></div>)}</div></section>;
+  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">PERFORMANCE SIGNALS</p><h1>Insights</h1><p>Use the lineup you already have to identify gaps and scheduling risk.</p></div></div><div className="insight-grid"><article><span>ACTIVE ROSTER</span><strong>{data.trucks.length}</strong><p>food-truck partners</p></article><article><span>UPCOMING VISITS</span><strong>{data.visits.length}</strong><p>currently planned</p></article><article><span>COMPLIANCE RISK</span><strong>{data.trucks.filter((t) => needsDocumentAttention(t.insuranceExpiry) || needsDocumentAttention(t.licenseExpiry)).length}</strong><p>documents need attention</p></article></div><div className="analysis-card"><h2>Cuisine mix</h2><p>A varied lineup reduces repeat fatigue and gives associates more choice.</p>{cuisineCounts.map(([name, count]) => <div className="bar-row" key={name}><span>{name}</span><i><b style={{ width: `${(count / max) * 100}%` }} /></i><strong>{count}</strong></div>)}</div></section>;
 }
 
 function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
@@ -557,9 +705,30 @@ function VisitForm({ trucks, selectedTruckId, selectedDate, startTime, endTime, 
 function TruckForm({ onSubmit }: { onSubmit: (e: FormEvent<HTMLFormElement>) => void }) {
   const [cuisineChoice, setCuisineChoice] = useState("");
   const [customCuisine, setCustomCuisine] = useState("");
+  const [logoData, setLogoData] = useState("");
+  const [logoError, setLogoError] = useState("");
+  const [logoBusy, setLogoBusy] = useState(false);
   const cuisine = cuisineChoice === "custom" ? customCuisine.trim() : cuisineChoice;
 
+  async function chooseLogo(file: File | null) {
+    if (!file) return;
+    setLogoBusy(true);
+    setLogoError("");
+    try {
+      setLogoData(await resizeTruckLogo(file));
+    } catch (error) {
+      setLogoError(error instanceof Error ? error.message : "That logo could not be prepared.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
   return <form onSubmit={onSubmit} className="form-grid">
+    <div className="full truck-logo-upload">
+      <span className={`logo-preview ${logoData ? "has-logo" : ""}`} style={{ backgroundImage: logoData ? `url("${logoData}")` : undefined }}>{logoData ? "" : "▰"}</span>
+      <div><strong>Truck logo <em>Optional</em></strong><p>Add a profile image now, or upload one later from the truck profile.</p><div className="logo-upload-buttons"><label className="secondary logo-button">{logoBusy ? "Preparing…" : logoData ? "Choose another" : "Choose image"}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={logoBusy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ""; void chooseLogo(file); }} /></label>{logoData && <button type="button" className="text-button" onClick={() => { setLogoData(""); setLogoError(""); }}>Remove</button>}</div>{logoError && <small className="form-error">{logoError}</small>}</div>
+      <input type="hidden" name="logoData" value={logoData} />
+    </div>
     <label>Name<input name="name" placeholder="Truck name" required /></label>
     <label>Cuisine
       <select value={cuisineChoice} onChange={(event) => setCuisineChoice(event.target.value)} required>
@@ -573,8 +742,8 @@ function TruckForm({ onSubmit }: { onSubmit: (e: FormEvent<HTMLFormElement>) => 
     <label>Contact<input name="contact" placeholder="Owner or coordinator" required /></label>
     <label>Phone<input name="phone" type="tel" required /></label>
     <label className="full">Email<input name="email" type="email" required /></label>
-    <label>Insurance expires<input name="insuranceExpiry" type="date" required /></label>
-    <label>Food license expires<input name="licenseExpiry" type="date" required /></label>
+    <label>Insurance expires <span className="optional-label">Optional</span><input name="insuranceExpiry" type="date" /></label>
+    <label>Food license expires <span className="optional-label">Optional</span><input name="licenseExpiry" type="date" /></label>
     <label>Default start<input name="preferredStart" type="time" defaultValue="11:00" /></label>
     <label>Default end<input name="preferredEnd" type="time" defaultValue="15:00" /></label>
     <fieldset className="full availability-editor"><legend>Weekly availability</legend><p>Check every day this truck can come, then set that day&apos;s available window.</p>{weekDays.map(({ day, short, label }) => <div className="availability-row" key={day}><label className="day-check"><input type="checkbox" name="availabilityDays" value={day} defaultChecked={day >= 1 && day <= 5} /><span>{short}</span><small>{label}</small></label><label><span>From</span><input type="time" name={`start_${day}`} defaultValue="11:00" /></label><label><span>To</span><input type="time" name={`end_${day}`} defaultValue="15:00" /></label></div>)}</fieldset>
