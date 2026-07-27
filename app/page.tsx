@@ -57,6 +57,28 @@ const weekDays = [
   { day: 6, short: "Sat", label: "Saturday" },
 ];
 
+const commonCuisines = [
+  "American / Comfort Food",
+  "Asian / Asian Fusion",
+  "Barbecue",
+  "Breakfast / Brunch",
+  "Burgers & Fries",
+  "Chicken / Wings",
+  "Coffee / Beverages",
+  "Desserts / Bakery",
+  "Greek / Mediterranean",
+  "Hot Dogs / Sausages",
+  "Ice Cream / Frozen Treats",
+  "Indian",
+  "Italian",
+  "Mexican / Tacos",
+  "Pizza",
+  "Sandwiches / Subs",
+  "Seafood",
+  "Soul Food",
+  "Vegetarian / Vegan",
+];
+
 function standardAvailability(start = "11:00", end = "15:00"): DayAvailability[] {
   return weekDays.map(({ day }) => ({ day, enabled: day >= 1 && day <= 5, start, end }));
 }
@@ -377,5 +399,30 @@ function VisitForm({ trucks, selectedTruckId, selectedDate, onSubmit }: { trucks
 }
 
 function TruckForm({ onSubmit }: { onSubmit: (e: FormEvent<HTMLFormElement>) => void }) {
-  return <form onSubmit={onSubmit} className="form-grid"><label>Name<input name="name" placeholder="Truck name" required /></label><label>Cuisine<input name="cuisine" placeholder="e.g. Barbecue" required /></label><label>Contact<input name="contact" placeholder="Owner or coordinator" required /></label><label>Phone<input name="phone" type="tel" required /></label><label className="full">Email<input name="email" type="email" required /></label><label>Insurance expires<input name="insuranceExpiry" type="date" required /></label><label>Food license expires<input name="licenseExpiry" type="date" required /></label><label>Default start<input name="preferredStart" type="time" defaultValue="11:00" /></label><label>Default end<input name="preferredEnd" type="time" defaultValue="15:00" /></label><fieldset className="full availability-editor"><legend>Weekly availability</legend><p>Check every day this truck can come, then set that day&apos;s available window.</p>{weekDays.map(({ day, short, label }) => <div className="availability-row" key={day}><label className="day-check"><input type="checkbox" name="availabilityDays" value={day} defaultChecked={day >= 1 && day <= 5} /><span>{short}</span><small>{label}</small></label><label><span>From</span><input type="time" name={`start_${day}`} defaultValue="11:00" /></label><label><span>To</span><input type="time" name={`end_${day}`} defaultValue="15:00" /></label></div>)}</fieldset><label className="full">Notes<textarea name="notes" placeholder="Electrical needs, setup notes, strongest dayparts…" /></label><button className="primary full" type="submit">Create truck profile</button></form>;
+  const [cuisineChoice, setCuisineChoice] = useState("");
+  const [customCuisine, setCustomCuisine] = useState("");
+  const cuisine = cuisineChoice === "custom" ? customCuisine.trim() : cuisineChoice;
+
+  return <form onSubmit={onSubmit} className="form-grid">
+    <label>Name<input name="name" placeholder="Truck name" required /></label>
+    <label>Cuisine
+      <select value={cuisineChoice} onChange={(event) => setCuisineChoice(event.target.value)} required>
+        <option value="" disabled>Select a cuisine…</option>
+        {commonCuisines.map((option) => <option value={option} key={option}>{option}</option>)}
+        <option value="custom">Other / Custom</option>
+      </select>
+      <input type="hidden" name="cuisine" value={cuisine} />
+      {cuisineChoice === "custom" && <input aria-label="Custom cuisine" value={customCuisine} onChange={(event) => setCustomCuisine(event.target.value)} placeholder="Enter cuisine or menu type" required />}
+    </label>
+    <label>Contact<input name="contact" placeholder="Owner or coordinator" required /></label>
+    <label>Phone<input name="phone" type="tel" required /></label>
+    <label className="full">Email<input name="email" type="email" required /></label>
+    <label>Insurance expires<input name="insuranceExpiry" type="date" required /></label>
+    <label>Food license expires<input name="licenseExpiry" type="date" required /></label>
+    <label>Default start<input name="preferredStart" type="time" defaultValue="11:00" /></label>
+    <label>Default end<input name="preferredEnd" type="time" defaultValue="15:00" /></label>
+    <fieldset className="full availability-editor"><legend>Weekly availability</legend><p>Check every day this truck can come, then set that day&apos;s available window.</p>{weekDays.map(({ day, short, label }) => <div className="availability-row" key={day}><label className="day-check"><input type="checkbox" name="availabilityDays" value={day} defaultChecked={day >= 1 && day <= 5} /><span>{short}</span><small>{label}</small></label><label><span>From</span><input type="time" name={`start_${day}`} defaultValue="11:00" /></label><label><span>To</span><input type="time" name={`end_${day}`} defaultValue="15:00" /></label></div>)}</fieldset>
+    <label className="full">Notes<textarea name="notes" placeholder="Electrical needs, setup notes, strongest dayparts…" /></label>
+    <button className="primary full" type="submit">Create truck profile</button>
+  </form>;
 }
