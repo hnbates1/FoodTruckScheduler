@@ -7,6 +7,206 @@ type D1 = {
   batch(statements: ReturnType<D1["prepare"]>[]): Promise<unknown>;
 };
 
+type TruckInput = {
+  id?: number;
+  name?: unknown;
+  cuisine?: unknown;
+  contact?: unknown;
+  phone?: unknown;
+  email?: unknown;
+  insuranceExpiry?: unknown;
+  licenseExpiry?: unknown;
+  preferredStart?: unknown;
+  preferredEnd?: unknown;
+  reliability?: unknown;
+  notes?: unknown;
+  color?: unknown;
+  availability?: unknown;
+};
+
+type VisitInput = {
+  id?: number;
+  truckId?: unknown;
+  visitDate?: unknown;
+  startTime?: unknown;
+  endTime?: unknown;
+  status?: unknown;
+  expectedDemand?: unknown;
+  notes?: unknown;
+};
+
+type AppDataInput = {
+  trucks?: TruckInput[];
+  visits?: VisitInput[];
+};
+
+function text(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function number(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function postgresUrl() {
+  return process.env.DATABASE_URL?.trim() || "";
+}
+
+let poolPromise: Promise<import("pg").Pool> | null = null;
+
+async function postgres() {
+  if (!poolPromise) {
+    poolPromise = import("pg").then(({ Pool }) => {
+      const connectionString = postgresUrl();
+      const isInternalRenderUrl = connectionString.includes(".internal");
+      return new Pool({
+        connectionString,
+        ssl: isInternalRenderUrl ? undefined : { rejectUnauthorized: false },
+        max: 5,
+      });
+    });
+  }
+  const pool = await poolPromise;
+  await pool.query(`CREATE TABLE IF NOT EXISTS trucks (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    cuisine TEXT NOT NULL,
+    contact TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    email TEXT NOT NULL,
+    insurance_expiry TEXT NOT NULL,
+    license_expiry TEXT NOT NULL,
+    preferred_start TEXT NOT NULL,
+    preferred_end TEXT NOT NULL,
+    reliability INTEGER NOT NULL DEFAULT 85,
+    notes TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL DEFAULT '#1687ff',
+    availability_json TEXT NOT NULL DEFAULT '[]'
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS visits (
+    id SERIAL PRIMARY KEY,
+    truck_id INTEGER NOT NULL REFERENCES trucks(id) ON DELETE CASCADE,
+    visit_date TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Tentative',
+    expected_demand TEXT NOT NULL DEFAULT 'Medium',
+    notes TEXT NOT NULL DEFAULT ''
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name)");
+  await pool.query("CREATE INDEX IF NOT EXISTS visits_date_idx ON visits(visit_date)");
+  return pool;
+}
+
+async function readAllPostgres(pool: import("pg").Pool | import("pg").PoolClient) {
+  const [trucksResult, visitsResult] = await Promise.all([
+    pool.query(`SELECT id,name,cuisine,contact,phone,email,
+      insurance_expiry AS "insuranceExpiry",license_expiry AS "licenseExpiry",
+      preferred_start AS "preferredStart",preferred_end AS "preferredEnd",
+      reliability,notes,color,availability_json AS "availabilityJson"
+      FROM trucks ORDER BY name`),
+    pool.query(`SELECT id,truck_id AS "truckId",visit_date AS "visitDate",
+      start_time AS "startTime",end_time AS "endTime",status,
+      expected_demand AS "expectedDemand",notes
+      FROM visits ORDER BY visit_date,start_time`),
+  ]);
+  const trucks = trucksResult.rows.map((truck) => {
+    let availability: unknown[] = [];
+    try {
+      availability = JSON.parse(String(truck.availabilityJson || "[]")) as unknown[];
+    } catch {
+      availability = [];
+    }
+    const rest = Object.fromEntries(
+      Object.entries(truck).filter(([key]) => key !== "availabilityJson"),
+    );
+    return { ...rest, availability };
+  });
+  return { trucks, visits: visitsResult.rows, storage: "postgres" };
+}
+
+async function savePostgres(payload: Record<string, unknown>) {
+  const pool = await postgres();
+  if (payload.kind === "truck") {
+    await pool.query(
+      `INSERT INTO trucks
+      (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [
+        text(payload.name), text(payload.cuisine), text(payload.contact), text(payload.phone),
+        text(payload.email), text(payload.insuranceExpiry), text(payload.licenseExpiry),
+        text(payload.preferredStart), text(payload.preferredEnd), 85, text(payload.notes),
+        "#1687ff", JSON.stringify(payload.availability ?? []),
+      ],
+    );
+  } else if (payload.kind === "visit") {
+    await pool.query(
+      `INSERT INTO visits (truck_id,visit_date,start_time,end_time,status,expected_demand,notes)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        number(payload.truckId), text(payload.visitDate), text(payload.startTime),
+        text(payload.endTime), text(payload.status), text(payload.expectedDemand),
+        text(payload.notes),
+      ],
+    );
+  } else if (payload.kind === "import") {
+    await importPostgres(pool, payload.data as AppDataInput);
+  } else {
+    return null;
+  }
+  return readAllPostgres(pool);
+}
+
+async function importPostgres(pool: import("pg").Pool, data: AppDataInput = {}) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(8244)");
+    const existing = await client.query<{ count: string }>("SELECT COUNT(*) AS count FROM trucks");
+    if (Number(existing.rows[0]?.count) > 0) {
+      await client.query("COMMIT");
+      return;
+    }
+    const idMap = new Map<number, number>();
+    for (const truck of data.trucks ?? []) {
+      const result = await client.query<{ id: number }>(
+        `INSERT INTO trucks
+        (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+        [
+          text(truck.name), text(truck.cuisine), text(truck.contact), text(truck.phone),
+          text(truck.email), text(truck.insuranceExpiry), text(truck.licenseExpiry),
+          text(truck.preferredStart), text(truck.preferredEnd), number(truck.reliability, 85),
+          text(truck.notes), text(truck.color, "#1687ff"),
+          JSON.stringify(truck.availability ?? []),
+        ],
+      );
+      if (truck.id && result.rows[0]) idMap.set(truck.id, result.rows[0].id);
+    }
+    for (const visit of data.visits ?? []) {
+      const oldTruckId = number(visit.truckId);
+      const truckId = idMap.get(oldTruckId);
+      if (!truckId) continue;
+      await client.query(
+        `INSERT INTO visits (truck_id,visit_date,start_time,end_time,status,expected_demand,notes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          truckId, text(visit.visitDate), text(visit.startTime), text(visit.endTime),
+          text(visit.status, "Tentative"), text(visit.expectedDemand, "Medium"),
+          text(visit.notes),
+        ],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 const truckSql = `CREATE TABLE IF NOT EXISTS trucks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -75,7 +275,9 @@ async function readAll(db: D1) {
     } catch {
       availability = [];
     }
-    const { availabilityJson: _availabilityJson, ...rest } = truck;
+    const rest = Object.fromEntries(
+      Object.entries(truck).filter(([key]) => key !== "availabilityJson"),
+    );
     return { ...rest, availability };
   });
   return { trucks, visits: visits.results };
@@ -83,6 +285,9 @@ async function readAll(db: D1) {
 
 export async function GET() {
   try {
+    if (postgresUrl()) {
+      return Response.json(await readAllPostgres(await postgres()));
+    }
     return Response.json(await readAll(await database()));
   } catch {
     return Response.json({ error: "Schedule data is temporarily unavailable." }, { status: 500 });
@@ -92,6 +297,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const payload = await request.json() as Record<string, unknown>;
+    if (postgresUrl()) {
+      const result = await savePostgres(payload);
+      if (!result) {
+        return Response.json({ error: "Unknown record type." }, { status: 400 });
+      }
+      return Response.json(result, { status: 201 });
+    }
     const db = await database();
     if (payload.kind === "truck") {
       await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
@@ -113,6 +325,11 @@ export async function DELETE(request: Request) {
     const id = Number(new URL(request.url).searchParams.get("id"));
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: "A valid truck id is required." }, { status: 400 });
+    }
+    if (postgresUrl()) {
+      const pool = await postgres();
+      await pool.query("DELETE FROM trucks WHERE id = $1", [id]);
+      return Response.json(await readAllPostgres(pool));
     }
     const db = await database();
     await db.batch([

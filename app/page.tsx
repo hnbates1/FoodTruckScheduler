@@ -37,7 +37,7 @@ type Visit = {
   notes: string;
 };
 
-type AppData = { trucks: Truck[]; visits: Visit[] };
+type AppData = { trucks: Truck[]; visits: Visit[]; storage?: "postgres" };
 type View = "dashboard" | "schedule" | "trucks" | "insights";
 
 const nav: { id: View; label: string; icon: string }[] = [
@@ -152,29 +152,45 @@ export default function Home() {
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("truckstop-data");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as AppData;
-        if (parsed.trucks?.length) {
-          const normalized = { ...parsed, trucks: parsed.trucks.map(withAvailability) };
-          setData(normalized);
-          setSelectedTruckId(normalized.trucks[0].id);
+    async function hydrate() {
+      const saved = window.localStorage.getItem("truckstop-data");
+      let savedData: AppData | null = null;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as AppData;
+          if (parsed.trucks?.length) {
+            savedData = { ...parsed, trucks: parsed.trucks.map(withAvailability) };
+          }
+        } catch {
+          window.localStorage.removeItem("truckstop-data");
         }
-      } catch {
-        window.localStorage.removeItem("truckstop-data");
       }
-    }
-    fetch("/api/data")
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((remote: AppData) => {
+      try {
+        const response = await fetch("/api/data");
+        if (!response.ok) throw new Error("Load failed");
+        let remote = await response.json() as AppData;
+        if (remote.storage === "postgres" && remote.trucks?.length === 0) {
+          const importResponse = await fetch("/api/data", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ kind: "import", data: savedData ?? localSeed }),
+          });
+          if (importResponse.ok) remote = await importResponse.json() as AppData;
+        }
         if (remote.trucks?.length) {
           setData({ ...remote, trucks: remote.trucks.map(withAvailability) });
           setSelectedTruckId(remote.trucks[0].id);
         }
-      })
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
+      } catch {
+        if (savedData?.trucks.length) {
+          setData(savedData);
+          setSelectedTruckId(savedData.trucks[0].id);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+    void hydrate();
   }, []);
 
   useEffect(() => {
