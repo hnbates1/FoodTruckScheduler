@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
 
 type Truck = {
   id: number;
@@ -111,6 +111,11 @@ function addDays(date: Date, amount: number) {
 function minutes(time: string) {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
+}
+
+function timeFromMinutes(value: number) {
+  const bounded = Math.max(0, Math.min(1439, value));
+  return `${String(Math.floor(bounded / 60)).padStart(2, "0")}:${String(bounded % 60).padStart(2, "0")}`;
 }
 
 function formatTime(time: string) {
@@ -228,6 +233,28 @@ export default function Home() {
     setData(next);
   }
 
+  async function updateVisit(visitId: number, startTime: string, endTime: string) {
+    const previous = data;
+    setData((current) => ({
+      ...current,
+      visits: current.visits.map((visit) => visit.id === visitId ? { ...visit, startTime, endTime } : visit),
+    }));
+    try {
+      const response = await fetch("/api/data", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: visitId, startTime, endTime }),
+      });
+      if (!response.ok) throw new Error("Update failed");
+      const next = await response.json() as AppData;
+      setData({ ...next, trucks: next.trucks.map(withAvailability) });
+      notify(`Visit changed to ${formatTime(startTime)} – ${formatTime(endTime)}`);
+    } catch {
+      setData(previous);
+      notify("That schedule change could not be saved");
+    }
+  }
+
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
@@ -323,7 +350,7 @@ export default function Home() {
               <article><span className="metric-icon blue">★</span><div><strong>{Math.round(data.trucks.reduce((sum, t) => sum + t.reliability, 0) / Math.max(1, data.trucks.length))}%</strong><p>Avg Reliability</p><small>Across active trucks</small></div></article>
             </div>
 
-            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} onSelect={setSelectedTruckId} />
+            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} />
             <div className="legend"><span><i className="blue-swatch" />Confirmed</span><span><i className="green-swatch" />Available</span><span><i className="stripe-swatch" />Conflict</span><span><i className="amber-swatch" />Documents expiring</span></div>
           </section>
           <aside className="right-rail">
@@ -333,7 +360,7 @@ export default function Home() {
         </div>
       )}
 
-      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => setModal("visit")} onSelect={setSelectedTruckId} />}
+      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => setModal("visit")} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} />}
       {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} />}
       {view === "insights" && <Insights data={data} />}
 
@@ -346,18 +373,81 @@ export default function Home() {
   );
 }
 
-function ScheduleBoard({ visits, trucks, overlaps, onSelect }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; onSelect: (id: number) => void }) {
-  const shown = visits.length ? visits : trucks.slice(0, 3).map((truck, index) => ({ id: -truck.id, truckId: truck.id, visitDate: "", startTime: `${11 + index}:00`, endTime: `${14 + index}:00`, status: "Available", expectedDemand: "", notes: "" }));
+type DragState = {
+  visitId: number;
+  mode: "move" | "start" | "end";
+  originX: number;
+  originStart: number;
+  originEnd: number;
+  start: number;
+  end: number;
+  timelineWidth: number;
+};
+
+function ScheduleBoard({ visits, trucks, overlaps, onSelect, onUpdateVisit }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void }) {
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const timelineStart = 600;
+  const timelineEnd = 1200;
+  const timelineSpan = timelineEnd - timelineStart;
+  const shown = visits;
+
+  function beginDrag(event: ReactPointerEvent<HTMLElement>, visit: Visit, mode: DragState["mode"]) {
+    if (visit.id < 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const timeline = event.currentTarget.closest(".timeline");
+    const timelineWidth = timeline?.getBoundingClientRect().width ?? 1;
+    const start = minutes(visit.startTime);
+    const end = minutes(visit.endTime);
+    setDrag({ visitId: visit.id, mode, originX: event.clientX, originStart: start, originEnd: end, start, end, timelineWidth });
+  }
+
+  function continueDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (!drag) return;
+    const rawDelta = ((event.clientX - drag.originX) / drag.timelineWidth) * timelineSpan;
+    const delta = Math.round(rawDelta / 15) * 15;
+    let start = drag.originStart;
+    let end = drag.originEnd;
+    if (drag.mode === "move") {
+      const duration = drag.originEnd - drag.originStart;
+      start = Math.max(timelineStart, Math.min(timelineEnd - duration, drag.originStart + delta));
+      end = start + duration;
+    } else if (drag.mode === "start") {
+      start = Math.max(timelineStart, Math.min(drag.originEnd - 30, drag.originStart + delta));
+    } else {
+      end = Math.min(timelineEnd, Math.max(drag.originStart + 30, drag.originEnd + delta));
+    }
+    setDrag((current) => current ? { ...current, start, end } : null);
+  }
+
+  function finishDrag() {
+    if (!drag) return;
+    if (drag.start !== drag.originStart || drag.end !== drag.originEnd) {
+      onUpdateVisit(drag.visitId, timeFromMinutes(drag.start), timeFromMinutes(drag.end));
+    }
+    setDrag(null);
+  }
+
   return <div className="schedule-board">
+    <div className="schedule-help"><span>Drag a shift to move it</span><span>Drag either edge to resize</span><span>15-minute increments</span></div>
     <div className="time-head"><strong>TRUCKS</strong>{Array.from({ length: 10 }, (_, i) => <span key={i}>{formatTime(`${10 + i}:00`).replace(":00", "")}</span>)}</div>
+    {!shown.length && <div className="empty-schedule"><strong>No trucks scheduled for this day</strong><span>Choose another date or add a visit.</span></div>}
     {shown.map((visit) => {
       const truck = trucks.find((t) => t.id === visit.truckId)!;
-      const left = ((minutes(visit.startTime) - 600) / 540) * 100;
-      const width = ((minutes(visit.endTime) - minutes(visit.startTime)) / 540) * 100;
+      const active = drag?.visitId === visit.id ? drag : null;
+      const start = active?.start ?? minutes(visit.startTime);
+      const end = active?.end ?? minutes(visit.endTime);
+      const left = ((start - timelineStart) / timelineSpan) * 100;
+      const width = ((end - start) / timelineSpan) * 100;
       const conflict = overlaps.some((pair) => pair.some((item) => item.id === visit.id));
       return <div className="timeline-row" key={visit.id}>
         <button className="truck-label" onClick={() => onSelect(truck.id)}><span className="avatar" style={{ background: truck.color }}>{initials(truck.name)}</span><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>
-        <div className="timeline"><button className={`visit-block ${conflict ? "conflict" : ""}`} style={{ left: `${left}%`, width: `${Math.max(width, 18)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} onClick={() => onSelect(truck.id)}><small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small><strong>{truck.name}</strong><span>{visit.status}</span></button></div>
+        <div className="timeline"><div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
+          {visit.id > 0 && <button className="resize-handle start" aria-label={`Change ${truck.name} start time`} onPointerDown={(event) => beginDrag(event, visit, "start")} />}
+          <small>{formatTime(timeFromMinutes(start))} – {formatTime(timeFromMinutes(end))}</small><strong>{truck.name}</strong><span>{visit.status}</span>
+          {visit.id > 0 && <button className="resize-handle end" aria-label={`Change ${truck.name} end time`} onPointerDown={(event) => beginDrag(event, visit, "end")} />}
+        </div></div>
       </div>;
     })}
   </div>;
@@ -380,14 +470,18 @@ function Assistant({ recommendation, selectedDate, onSchedule }: { recommendatio
   </article>;
 }
 
-function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelect }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; onSchedule: () => void; onSelect: (id: number) => void }) {
+function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelect, onUpdateVisit }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void }) {
   const [mode, setMode] = useState<"gantt" | "calendar">("gantt");
-  const days = Array.from({ length: 14 }, (_, i) => addDays(new Date("2026-07-27T12:00:00"), i));
-  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">VISIT PLANNER</p><h1>Schedule</h1><p>Plan upcoming visits and spot open service windows.</p></div><div className="heading-actions"><div className="view-toggle"><button className={mode === "gantt" ? "active" : ""} onClick={() => setMode("gantt")}>▤ Gantt</button><button className={mode === "calendar" ? "active" : ""} onClick={() => setMode("calendar")}>▦ Calendar</button></div><button className="primary" onClick={onSchedule}>＋ Schedule Visit</button></div></div>{mode === "gantt" ? <GanttSchedule data={data} days={days} onSelect={onSelect} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}</section>;
-}
-
-function GanttSchedule({ data, days, onSelect }: { data: AppData; days: Date[]; onSelect: (id: number) => void }) {
-  return <div className="gantt-wrap"><div className="gantt-grid" style={{ gridTemplateColumns: `210px repeat(${days.length}, minmax(88px, 1fr))` }}><div className="gantt-corner"><strong>TRUCK / VENDOR</strong><small>Two-week outlook</small></div>{days.map((date) => <div className="gantt-day" key={dateKey(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></div>)}{data.trucks.map((truck) => <div className="gantt-row" key={truck.id} style={{ gridColumn: `1 / span ${days.length + 1}`, gridTemplateColumns: `210px repeat(${days.length}, minmax(88px, 1fr))` }}><button className="gantt-truck" onClick={() => onSelect(truck.id)}><span className="avatar" style={{ background: truck.color }}>{initials(truck.name)}</span><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>{days.map((date) => { const visit = data.visits.find((v) => v.truckId === truck.id && v.visitDate === dateKey(date)); const slot = withAvailability(truck).availability.find((item) => item.day === date.getDay()); return <div className={`gantt-cell ${!slot?.enabled ? "unavailable-cell" : ""}`} key={dateKey(date)}>{visit ? <button className={`gantt-bar ${visit.status.toLowerCase()}`} style={{ borderColor: truck.color, background: `${truck.color}35` }} onClick={() => onSelect(truck.id)}><strong>{formatTime(visit.startTime)}</strong><small>{formatTime(visit.endTime)}</small><i>{visit.status}</i></button> : slot?.enabled ? <span className="availability-window"><strong>{formatTime(slot.start).replace(":00", "")}</strong><small>to {formatTime(slot.end).replace(":00", "")}</small></span> : <span className="unavailable-label">—</span>}</div>; })}</div>)}</div><div className="gantt-foot"><span><i className="blue-swatch" /> Confirmed visit</span><span><i className="amber-swatch" /> Tentative visit</span><span>Time = available window</span><span>— Unavailable</span></div></div>;
+  const weekStart = addDays(selectedDate, -selectedDate.getDay() + 1);
+  const days = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i));
+  const selectedVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
+  const overlaps = selectedVisits.flatMap((a, index) => selectedVisits.slice(index + 1).filter((b) => minutes(a.startTime) < minutes(b.endTime) && minutes(b.startTime) < minutes(a.endTime)).map((b) => [a, b]));
+  return <section className="content-page">
+    <div className="section-heading"><div><p className="eyebrow">VISIT PLANNER</p><h1>Schedule</h1><p>Plan upcoming visits and adjust times directly on the schedule.</p></div><div className="heading-actions"><div className="view-toggle"><button className={mode === "gantt" ? "active" : ""} onClick={() => setMode("gantt")}>▤ Daily Gantt</button><button className={mode === "calendar" ? "active" : ""} onClick={() => setMode("calendar")}>▦ Calendar</button></div><button className="primary" onClick={onSchedule}>＋ Schedule Visit</button></div></div>
+    <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(new Date("2026-07-27T12:00:00"))}>Today</button></div>
+    <div className="week-strip schedule-week">{days.slice(0, 7).map((date) => <button key={dateKey(date)} className={dateKey(date) === dateKey(selectedDate) ? "selected" : ""} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></button>)}</div>
+    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} onSelect={onSelect} onUpdateVisit={onUpdateVisit} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
+  </section>;
 }
 
 function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete }: { trucks: Truck[]; selectedId: number; setSelectedId: (id: number) => void; onAdd: () => void; onDelete: (id: number) => void }) {
