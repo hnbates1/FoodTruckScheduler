@@ -251,7 +251,7 @@ async function postgres() {
   await pool.query("CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name)");
   await pool.query("CREATE INDEX IF NOT EXISTS visits_date_idx ON visits(visit_date)");
   await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_data TEXT NOT NULL DEFAULT ''");
-  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_updated_at TEXT NOT NULL DEFAULT '');
+  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_updated_at TEXT NOT NULL DEFAULT ''");
   await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS payment_types TEXT NOT NULL DEFAULT '')");
   return pool;
 }
