@@ -20,6 +20,7 @@ type Truck = {
   hasLogo?: boolean;
   logoVersion?: string;
   logoData?: string;
+  paymentTypes: string;
 };
 
 type DayAvailability = {
@@ -43,7 +44,7 @@ type Visit = {
 type AppData = { trucks: Truck[]; visits: Visit[]; storage?: "postgres" };
 type View = "dashboard" | "schedule" | "trucks" | "insights" | "location";
 type SessionUser = { id: number; email: string; name: string; storeNumber: string; role: string };
-type LocationProfile = { storeName: string; storeNumber: string; street: string; city: string; state: string; zip: string; phone: string; timezone: string; notes: string };
+type LocationProfile = { storeName: string; storeNumber: string; street: string; city: string; state: string; zip: string; phone: string; timezone: string; notes: string; operatingHours: DayAvailability[]; closedDates: string[] };
 
 const nav: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
@@ -91,10 +92,10 @@ function standardAvailability(start = "11:00", end = "15:00"): DayAvailability[]
 
 const localSeed: AppData = {
   trucks: [
-    { id: 1, name: "Sample Burger Truck", cuisine: "Smashburgers & Fries", contact: "Sample Contact", phone: "(202) 555-0101", email: "burgers@example.com", insuranceExpiry: "2026-10-14", licenseExpiry: "2027-02-28", preferredStart: "11:00", preferredEnd: "15:00", reliability: 96, notes: "Demo record. Needs 20A electrical hookup.", color: "#1687ff", availability: standardAvailability() },
-    { id: 2, name: "Sample Taco Truck", cuisine: "Mexican", contact: "Sample Contact", phone: "(202) 555-0102", email: "tacos@example.com", insuranceExpiry: "2027-01-09", licenseExpiry: "2026-11-22", preferredStart: "12:00", preferredEnd: "16:00", reliability: 92, notes: "Demo record for scheduling.", color: "#7ac943", availability: standardAvailability("12:00", "16:00") },
-    { id: 3, name: "Sample Dessert Truck", cuisine: "Desserts & Coffee", contact: "Sample Contact", phone: "(202) 555-0103", email: "desserts@example.com", insuranceExpiry: "2026-09-18", licenseExpiry: "2027-03-10", preferredStart: "15:00", preferredEnd: "19:00", reliability: 88, notes: "Demo record for scheduling.", color: "#9b6cff", availability: standardAvailability("15:00", "19:00").map((slot) => ({ ...slot, enabled: slot.day >= 3 && slot.day <= 6 })) },
-    { id: 4, name: "Sample Barbecue Truck", cuisine: "Barbecue", contact: "Sample Contact", phone: "(202) 555-0104", email: "barbecue@example.com", insuranceExpiry: "2026-08-21", licenseExpiry: "2026-12-12", preferredStart: "11:00", preferredEnd: "15:00", reliability: 94, notes: "Demo record; allow 30 minutes for setup.", color: "#ff9c42", availability: standardAvailability().map((slot) => ({ ...slot, enabled: [1, 4, 5, 6].includes(slot.day) })) },
+    { id: 1, name: "Sample Burger Truck", cuisine: "Smashburgers & Fries", contact: "Sample Contact", phone: "(202) 555-0101", email: "burgers@example.com", insuranceExpiry: "2026-10-14", licenseExpiry: "2027-02-28", preferredStart: "11:00", preferredEnd: "15:00", reliability: 96, notes: "Demo record. Needs 20A electrical hookup.", color: "#1687ff", availability: standardAvailability(), paymentTypes: "Cash, Credit/Debit Cards" },
+    { id: 2, name: "Sample Taco Truck", cuisine: "Mexican", contact: "Sample Contact", phone: "(202) 555-0102", email: "tacos@example.com", insuranceExpiry: "2027-01-09", licenseExpiry: "2026-11-22", preferredStart: "12:00", preferredEnd: "16:00", reliability: 92, notes: "Demo record for scheduling.", color: "#7ac943", availability: standardAvailability("12:00", "16:00"), paymentTypes: "Cash, Credit/Debit Cards, Apple Pay" },
+    { id: 3, name: "Sample Dessert Truck", cuisine: "Desserts & Coffee", contact: "Sample Contact", phone: "(202) 555-0103", email: "desserts@example.com", insuranceExpiry: "2026-09-18", licenseExpiry: "2027-03-10", preferredStart: "15:00", preferredEnd: "19:00", reliability: 88, notes: "Demo record for scheduling.", color: "#9b6cff", availability: standardAvailability("15:00", "19:00").map((slot) => ({ ...slot, enabled: slot.day >= 3 && slot.day <= 6 })), paymentTypes: "Credit/Debit Cards, Apple Pay, Google Pay" },
+    { id: 4, name: "Sample Barbecue Truck", cuisine: "Barbecue", contact: "Sample Contact", phone: "(202) 555-0104", email: "barbecue@example.com", insuranceExpiry: "2026-08-21", licenseExpiry: "2026-12-12", preferredStart: "11:00", preferredEnd: "15:00", reliability: 94, notes: "Demo record; allow 30 minutes for setup.", color: "#ff9c42", availability: standardAvailability().map((slot) => ({ ...slot, enabled: [1, 4, 5, 6].includes(slot.day) })), paymentTypes: "Cash, Credit/Debit Cards" },
   ],
   visits: [
     { id: 1, truckId: 1, visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", status: "Confirmed", expectedDemand: "High", notes: "" },
@@ -260,7 +261,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [visitDraft, setVisitDraft] = useState({ visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", truckId: 1 });
-  const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "" });
+  const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "", operatingHours: weekDays.map(({ day }) => ({ day, enabled: day >= 1 && day <= 6, start: "06:00", end: "22:00" })), closedDates: [] });
 
   async function hydrate() {
     setLoading(true);
@@ -460,6 +461,7 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries()) as Record<string, unknown>;
     const enabledDays = new Set(form.getAll("availabilityDays").map(Number));
+    payload.paymentTypes = form.getAll("paymentMethods").map(String).join(", ");
     payload.availability = weekDays.map(({ day }) => ({
       day,
       enabled: enabledDays.has(day),
@@ -471,7 +473,7 @@ export default function Home() {
       setModal(null);
       notify("Truck profile created");
     } catch {
-      const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 85, notes: String(payload.notes ?? ""), color: "#1687ff", availability: payload.availability as DayAvailability[], hasLogo: Boolean(payload.logoData), logoData: String(payload.logoData || ""), logoVersion: String(Date.now()) };
+      const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 85, notes: String(payload.notes ?? ""), color: "#1687ff", availability: payload.availability as DayAvailability[], hasLogo: Boolean(payload.logoData), logoData: String(payload.logoData || ""), logoVersion: String(Date.now()), paymentTypes: String(payload.paymentTypes || "") };
       setData((current) => ({ ...current, trucks: [...current.trucks, optimistic] }));
       setModal(null);
       notify("Truck profile saved on this device");
@@ -550,14 +552,14 @@ export default function Home() {
   }
 
   if (authLoading) {
-    return <main className="auth-shell"><div className="auth-loading">Loading TruckStop…</div></main>;
+    return <main className="auth-shell"><div className="auth-loading">Loading Food Truck Admin…</div></main>;
   }
 
   if (!user) {
     return (
       <main className="auth-shell">
         <section className="auth-card">
-          <div className="auth-brand"><span className="truck-mark">▰</span><strong>TruckStop</strong></div>
+          <div className="auth-brand"><span className="truck-mark">▰</span><strong>Food Truck Admin</strong></div>
           <p className="auth-kicker">LOWE&apos;S • STORE 0244</p>
           <h1>{needsSetup ? "Create administrator" : "Welcome back"}</h1>
           <p>{needsSetup ? "Finish the one-time setup for Store 0244." : "Sign in to manage food trucks, visits, and schedules."}</p>
@@ -569,21 +571,22 @@ export default function Home() {
             {signInError && <div className="auth-error" role="alert">△ {signInError}</div>}
             <button className="primary auth-submit" type="submit" disabled={signingIn}>{signingIn ? "Working…" : needsSetup ? "Create administrator" : "Sign in"}</button>
           </form>
-          <small>Accounts are created by the TruckStop administrator.</small>
+          <small>Accounts are created by the Food Truck Admin administrator.</small>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell role-${user.role}`}>
       <header className="topbar">
-        <button className="brand" onClick={() => setView("dashboard")} aria-label="TruckStop dashboard">
-          <span className="truck-mark">▰</span><strong>TruckStop</strong>
+        <button className="brand" onClick={() => setView("dashboard")} aria-label="Food Truck Admin dashboard">
+          <span className="truck-mark">▰</span><strong>Food Truck Admin</strong>
         </button>
         <span className="store-chip">LOWE&apos;S • STORE 0244</span>
         <nav>
           {nav.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}
+          {user.role === "admin" && <a className="admin-nav-link" href="/admin"><span>⚙</span>Admin</a>}
         </nav>
         <label className="search"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search trucks, cuisine, contacts…" /></label>
         <button className="primary" onClick={() => openVisitModal()}>＋ Schedule Visit</button>
@@ -750,7 +753,7 @@ function TruckProfile({ truck, onView }: { truck: Truck; onView: () => void }) {
   return <article className="rail-card profile-card">
     <div className="card-title"><h2>Truck Profile</h2><span>⌃</span></div>
     <div className="profile-head"><TruckAvatar truck={truck} large /><div><h3>{truck.name}</h3><p>{truck.cuisine}</p><strong className="rating">★ {(truck.reliability / 20).toFixed(1)}</strong></div></div>
-    <dl><div><dt>Contact</dt><dd>{truck.contact}</dd></div><div><dt>Phone</dt><dd>{truck.phone}</dd></div><div><dt>Email</dt><dd>{truck.email}</dd></div><div><dt>Insurance</dt><dd>{expiryLabel(truck.insuranceExpiry)}</dd></div><div><dt>Preferred hours</dt><dd>{formatTime(truck.preferredStart)} – {formatTime(truck.preferredEnd)}</dd></div><div><dt>Reliability</dt><dd className="lime">{truck.reliability}%</dd></div></dl>
+    <dl><div><dt>Contact</dt><dd>{truck.contact}</dd></div><div><dt>Phone</dt><dd>{truck.phone}</dd></div><div><dt>Email</dt><dd>{truck.email}</dd></div><div><dt>Payments</dt><dd>{truck.paymentTypes || "Not provided"}</dd></div><div><dt>Insurance</dt><dd>{expiryLabel(truck.insuranceExpiry)}</dd></div><div><dt>Preferred hours</dt><dd>{formatTime(truck.preferredStart)} – {formatTime(truck.preferredEnd)}</dd></div><div><dt>Reliability</dt><dd className="lime">{truck.reliability}%</dd></div></dl>
     <button className="secondary wide" onClick={onView}>View Full Profile</button>
   </article>;
 }
@@ -825,7 +828,7 @@ function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete, onLogo
       {selected && <article className="detail-card">
         <div className="profile-head"><TruckAvatar truck={selected} large /><div><h2>{selected.name}</h2><p>{selected.cuisine}</p></div></div>
         <TruckLogoEditor truck={selected} onChange={(file) => onLogoChange(selected.id, file)} />
-        <dl><div><dt>Primary contact</dt><dd>{selected.contact}</dd></div><div><dt>Phone</dt><dd>{selected.phone}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Insurance expiration</dt><dd>{selected.insuranceExpiry || "Not provided"}</dd></div><div><dt>Food license expiration</dt><dd>{selected.licenseExpiry || "Not provided"}</dd></div></dl>
+        <dl><div><dt>Primary contact</dt><dd>{selected.contact}</dd></div><div><dt>Phone</dt><dd>{selected.phone}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Accepted payments</dt><dd>{selected.paymentTypes || "Not provided"}</dd></div><div><dt>Insurance expiration</dt><dd>{selected.insuranceExpiry || "Not provided"}</dd></div><div><dt>Food license expiration</dt><dd>{selected.licenseExpiry || "Not provided"}</dd></div></dl>
         <h4>Weekly availability</h4>
         <div className="availability-summary">{withAvailability(selected).availability.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Unavailable"}</span></div>)}</div>
         <h4>Operations notes</h4><p>{selected.notes || "No notes yet."}</p>
@@ -905,6 +908,7 @@ function TruckForm({ onSubmit }: { onSubmit: (e: FormEvent<HTMLFormElement>) => 
     <label>Contact<input name="contact" placeholder="Owner or coordinator" required /></label>
     <label>Phone<input name="phone" type="tel" required /></label>
     <label className="full">Email<input name="email" type="email" required /></label>
+    <fieldset className="full payment-editor"><legend>Accepted payment types</legend><p>Select every method this truck accepts.</p><div className="payment-options">{["Cash","Credit/Debit Cards","Apple Pay","Google Pay","Cash App","Venmo"].map((method) => <label key={method}><input type="checkbox" name="paymentMethods" value={method} />{method}</label>)}</div><label>Other<input name="paymentMethods" placeholder="Other payment type" /></label></fieldset>
     <label>Insurance expires <span className="optional-label">Optional</span><input name="insuranceExpiry" type="date" /></label>
     <label>Food license expires <span className="optional-label">Optional</span><input name="licenseExpiry" type="date" /></label>
     <label>Default start<input name="preferredStart" type="time" defaultValue="11:00" /></label>
