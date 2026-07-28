@@ -461,7 +461,7 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries()) as Record<string, unknown>;
     const enabledDays = new Set(form.getAll("availabilityDays").map(Number));
-    payload.paymentTypes = form.getAll("paymentMethods").map(String).join(", ");
+    payload.paymentTypes = form.getAll("paymentMethods").map(String).map((method) => method.trim()).filter(Boolean).join(", ");
     payload.availability = weekDays.map(({ day }) => ({
       day,
       enabled: enabledDays.has(day),
