@@ -34,6 +34,7 @@ type TruckInput = {
   color?: unknown;
   availability?: unknown;
   logoData?: unknown;
+  paymentTypes?: unknown;
 };
 
 type VisitInput = {
@@ -234,7 +235,8 @@ async function postgres() {
     color TEXT NOT NULL DEFAULT '#1687ff',
     availability_json TEXT NOT NULL DEFAULT '[]',
     logo_data TEXT NOT NULL DEFAULT '',
-    logo_updated_at TEXT NOT NULL DEFAULT ''
+    logo_updated_at TEXT NOT NULL DEFAULT '',
+    payment_types TEXT NOT NULL DEFAULT ''
   )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS visits (
     id SERIAL PRIMARY KEY,
@@ -249,7 +251,8 @@ async function postgres() {
   await pool.query("CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name)");
   await pool.query("CREATE INDEX IF NOT EXISTS visits_date_idx ON visits(visit_date)");
   await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_data TEXT NOT NULL DEFAULT ''");
-  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_updated_at TEXT NOT NULL DEFAULT ''");
+  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_updated_at TEXT NOT NULL DEFAULT '');
+  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS payment_types TEXT NOT NULL DEFAULT '')");
   return pool;
 }
 
@@ -258,7 +261,7 @@ async function readAllPostgres(pool: import("pg").Pool | import("pg").PoolClient
     pool.query(`SELECT id,name,cuisine,contact,phone,email,
       insurance_expiry AS "insuranceExpiry",license_expiry AS "licenseExpiry",
       preferred_start AS "preferredStart",preferred_end AS "preferredEnd",
-      reliability,notes,color,availability_json AS "availabilityJson",
+      reliability,notes,color,payment_types AS "paymentTypes",availability_json AS "availabilityJson",
       (logo_data <> '') AS "hasLogo",logo_updated_at AS "logoVersion"
       FROM trucks ORDER BY name`),
     pool.query(`SELECT id,truck_id AS "truckId",visit_date AS "visitDate",
@@ -287,14 +290,14 @@ async function savePostgres(payload: Record<string, unknown>) {
     const logo = decodeLogo(payload.logoData);
     await pool.query(
       `INSERT INTO trucks
-      (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,logo_data,logo_updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,logo_data,logo_updated_at,payment_types)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [
         text(payload.name), text(payload.cuisine), text(payload.contact), text(payload.phone),
         text(payload.email), text(payload.insuranceExpiry), text(payload.licenseExpiry),
         text(payload.preferredStart), text(payload.preferredEnd), 85, text(payload.notes),
         "#1687ff", JSON.stringify(payload.availability ?? []), logo?.dataUrl ?? "",
-        logo ? String(Date.now()) : "",
+        logo ? String(Date.now()) : "", text(payload.paymentTypes),
       ],
     );
   } else if (payload.kind === "visit") {
@@ -330,15 +333,15 @@ async function importPostgres(pool: import("pg").Pool, data: AppDataInput = {}) 
       const logo = decodeLogo(truck.logoData);
       const result = await client.query<{ id: number }>(
         `INSERT INTO trucks
-        (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,logo_data,logo_updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+        (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,logo_data,logo_updated_at,payment_types)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
         [
           text(truck.name), text(truck.cuisine), text(truck.contact), text(truck.phone),
           text(truck.email), text(truck.insuranceExpiry), text(truck.licenseExpiry),
           text(truck.preferredStart), text(truck.preferredEnd), number(truck.reliability, 85),
           text(truck.notes), text(truck.color, "#1687ff"),
           JSON.stringify(truck.availability ?? []), logo?.dataUrl ?? "",
-          logo ? String(Date.now()) : "",
+          logo ? String(Date.now()) : "", text(truck.paymentTypes),
         ],
       );
       if (truck.id && result.rows[0]) idMap.set(truck.id, result.rows[0].id);
@@ -382,7 +385,8 @@ const truckSql = `CREATE TABLE IF NOT EXISTS trucks (
   color TEXT NOT NULL DEFAULT '#1687ff',
   availability_json TEXT NOT NULL DEFAULT '[]',
   logo_key TEXT NOT NULL DEFAULT '',
-  logo_updated_at TEXT NOT NULL DEFAULT ''
+  logo_updated_at TEXT NOT NULL DEFAULT '',
+  payment_types TEXT NOT NULL DEFAULT ''
 )`;
 
 const visitSql = `CREATE TABLE IF NOT EXISTS visits (
@@ -413,7 +417,10 @@ async function database() {
     await db.prepare("ALTER TABLE trucks ADD COLUMN logo_key TEXT NOT NULL DEFAULT ''").run();
   }
   if (!columns.results.some((column) => column.name === "logo_updated_at")) {
-    await db.prepare("ALTER TABLE trucks ADD COLUMN logo_updated_at TEXT NOT NULL DEFAULT ''").run();
+    await db.prepare("ALTER TABLE trucks ADD COLUMN logo_updated_at TEXT NOT NULL DEFAULT '').run();
+  }
+  if (!columns.results.some((column) => column.name === "payment_types")) {
+    await db.prepare("ALTER TABLE trucks ADD COLUMN payment_types TEXT NOT NULL DEFAULT '').run();
   }
   const count = await db.prepare("SELECT COUNT(*) AS count FROM trucks").all<{ count: number }>();
   if (!count.results[0]?.count) {
@@ -439,7 +446,7 @@ async function objectStorage() {
 }
 
 async function readAll(db: D1) {
-  const trucksResult = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color,availability_json AS availabilityJson,(logo_key <> '') AS hasLogo,logo_updated_at AS logoVersion FROM trucks ORDER BY name").all<Record<string, unknown>>();
+  const trucksResult = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color,payment_types AS paymentTypes,availability_json AS availabilityJson,(logo_key <> '') AS hasLogo,logo_updated_at AS logoVersion FROM trucks ORDER BY name").all<Record<string, unknown>>();
   const visits = await db.prepare("SELECT id,truck_id AS truckId,visit_date AS visitDate,start_time AS startTime,end_time AS endTime,status,expected_demand AS expectedDemand,notes FROM visits ORDER BY visit_date,start_time").all();
   const trucks = trucksResult.results.map((truck) => {
     let availability: unknown[] = [];
@@ -515,6 +522,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
+  if (!["admin", "manager"].includes(session.user.role)) {
+    return Response.json({ error: "This account has view-only access." }, { status: 403 });
+  }
   try {
     const payload = await request.json() as Record<string, unknown>;
     if (payload.kind === "truck" && text(payload.logoData) && !decodeLogo(payload.logoData)) {
@@ -529,8 +539,8 @@ export async function POST(request: Request) {
     }
     const db = await database();
     if (payload.kind === "truck") {
-      const result = await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
-        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry ?? "",payload.licenseExpiry ?? "",payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? [])).all<{ id: number }>();
+      const result = await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,payment_types) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
+        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry ?? "",payload.licenseExpiry ?? "",payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? []),text(payload.paymentTypes)).all<{ id: number }>();
       const logo = decodeLogo(payload.logoData);
       const id = result.results[0]?.id;
       if (logo && id) {
@@ -554,6 +564,9 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
+  if (!["admin", "manager"].includes(session.user.role)) {
+    return Response.json({ error: "This account has view-only access." }, { status: 403 });
+  }
   try {
     const payload = await request.json() as Record<string, unknown>;
     const id = number(payload.id);
@@ -610,6 +623,9 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
+  if (session.user.role !== "admin") {
+    return Response.json({ error: "Only an administrator can delete records." }, { status: 403 });
+  }
   try {
     const searchParams = new URL(request.url).searchParams;
     const visitId = Number(searchParams.get("visitId"));
