@@ -15,6 +15,11 @@ export type UserRow = SessionUser & {
   lockedUntil: string;
 };
 
+export type SafeUserRow = SessionUser & {
+  createdAt: string;
+  lastLoginAt: string;
+};
+
 export type AuthStore = {
   countUsers(): Promise<number>;
   findUserByEmail(email: string): Promise<UserRow | null>;
@@ -25,6 +30,10 @@ export type AuthStore = {
   findSession(tokenHash: string): Promise<{ user: SessionUser; expiresAt: string } | null>;
   deleteSession(tokenHash: string): Promise<void>;
   deleteExpiredSessions(): Promise<void>;
+  listUsers(): Promise<SafeUserRow[]>;
+  countAdmins(): Promise<number>;
+  updateUserRole(userId: number, role: string): Promise<void>;
+  deleteUser(userId: number): Promise<void>;
 };
 
 const D1_DDL = [
@@ -49,6 +58,11 @@ const D1_DDL = [
     user_agent TEXT NOT NULL DEFAULT ''
   )`,
   "CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id)",
+  `CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 const PUBLIC_COLUMNS = `id, email, name, store_number AS storeNumber, role,
@@ -118,6 +132,28 @@ export async function authStore(): Promise<AuthStore> {
     },
     async deleteExpiredSessions() {
       await db.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(new Date().toISOString()).run();
+    },
+    async listUsers() {
+      const result = await db.prepare(
+        `SELECT id,email,name,store_number AS storeNumber,role,
+          created_at AS createdAt,last_login_at AS lastLoginAt
+         FROM users ORDER BY name,email`,
+      ).all<SafeUserRow>();
+      return result.results;
+    },
+    async countAdmins() {
+      const result = await db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'")
+        .all<{ count: number }>();
+      return Number(result.results[0]?.count ?? 0);
+    },
+    async updateUserRole(userId, role) {
+      await db.prepare("UPDATE users SET role = ? WHERE id = ?").bind(role, userId).run();
+    },
+    async deleteUser(userId) {
+      await db.batch([
+        db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
+        db.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+      ]);
     },
   };
 }
