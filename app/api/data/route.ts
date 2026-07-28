@@ -52,6 +52,11 @@ type AppDataInput = {
   visits?: VisitInput[];
 };
 
+type CalendarData = {
+  trucks: Record<string, unknown>[];
+  visits: Record<string, unknown>[];
+};
+
 function text(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
@@ -76,6 +81,122 @@ function decodeLogo(value: unknown) {
   } catch {
     return null;
   }
+}
+
+function escapeCalendarText(value: unknown) {
+  return text(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,");
+}
+
+function calendarDateTime(date: unknown, time: unknown) {
+  const compactDate = text(date).replace(/-/g, "");
+  const compactTime = text(time).replace(/:/g, "");
+  if (!/^\d{8}$/.test(compactDate) || !/^\d{4}$/.test(compactTime)) return "";
+  return `${compactDate}T${compactTime}00`;
+}
+
+function foldCalendarLine(line: string) {
+  const encoder = new TextEncoder();
+  const lines: string[] = [];
+  let current = "";
+  let currentBytes = 0;
+  for (const character of line) {
+    const characterBytes = encoder.encode(character).length;
+    const limit = lines.length ? 74 : 75;
+    if (current && currentBytes + characterBytes > limit) {
+      lines.push(current);
+      current = ` ${character}`;
+      currentBytes = 1 + characterBytes;
+    } else {
+      current += character;
+      currentBytes += characterBytes;
+    }
+  }
+  lines.push(current);
+  return lines;
+}
+
+function buildScheduleCalendar(data: CalendarData) {
+  const trucks = new Map(
+    data.trucks.map((truck) => [number(truck.id), truck]),
+  );
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const events = data.visits
+    .filter((visit) => text(visit.status).toLowerCase() !== "cancelled")
+    .sort((a, b) => `${text(a.visitDate)}${text(a.startTime)}`.localeCompare(`${text(b.visitDate)}${text(b.startTime)}`))
+    .flatMap((visit) => {
+      const truck = trucks.get(number(visit.truckId));
+      const start = calendarDateTime(visit.visitDate, visit.startTime);
+      const end = calendarDateTime(visit.visitDate, visit.endTime);
+      if (!truck || !start || !end) return [];
+      const status = text(visit.status, "Tentative");
+      const details = [
+        `Cuisine: ${text(truck.cuisine, "Not provided")}`,
+        `Status: ${status}`,
+        `Expected demand: ${text(visit.expectedDemand, "Not provided")}`,
+        `Contact: ${text(truck.contact, "Not provided")}`,
+        `Phone: ${text(truck.phone, "Not provided")}`,
+        `Email: ${text(truck.email, "Not provided")}`,
+        text(visit.notes) ? `Notes: ${text(visit.notes)}` : "",
+      ].filter(Boolean).join("\n");
+      return [[
+        "BEGIN:VEVENT",
+        `UID:visit-${number(visit.id)}-${text(visit.visitDate)}@food-truck-scheduler.store-0244`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART;TZID=America/New_York:${start}`,
+        `DTEND;TZID=America/New_York:${end}`,
+        `SUMMARY:${escapeCalendarText(`Food Truck: ${text(truck.name, "Scheduled Truck")}`)}`,
+        `DESCRIPTION:${escapeCalendarText(details)}`,
+        `LOCATION:${escapeCalendarText("Lowe's Store 0244")}`,
+        `STATUS:${status.toLowerCase() === "tentative" ? "TENTATIVE" : "CONFIRMED"}`,
+        "TRANSP:TRANSPARENT",
+        "CATEGORIES:FOOD TRUCK",
+        "END:VEVENT",
+      ]];
+    });
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//TruckStop Scheduler//Lowe's Store 0244//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:Lowe's Store 0244 Food Trucks",
+    "X-WR-TIMEZONE:America/New_York",
+    "BEGIN:VTIMEZONE",
+    "TZID:America/New_York",
+    "X-LIC-LOCATION:America/New_York",
+    "BEGIN:DAYLIGHT",
+    "TZOFFSETFROM:-0500",
+    "TZOFFSETTO:-0400",
+    "TZNAME:EDT",
+    "DTSTART:19700308T020000",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
+    "END:DAYLIGHT",
+    "BEGIN:STANDARD",
+    "TZOFFSETFROM:-0400",
+    "TZOFFSETTO:-0500",
+    "TZNAME:EST",
+    "DTSTART:19701101T020000",
+    "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU",
+    "END:STANDARD",
+    "END:VTIMEZONE",
+    ...events.flat(),
+    "END:VCALENDAR",
+  ];
+  return lines.flatMap(foldCalendarLine).join("\r\n") + "\r\n";
+}
+
+function scheduleCalendarResponse(data: CalendarData) {
+  return new Response(buildScheduleCalendar(data), {
+    headers: {
+      "cache-control": "no-store",
+      "content-disposition": 'attachment; filename="lowes-store-0244-food-truck-schedule.ics"',
+      "content-type": "text/calendar; charset=utf-8",
+    },
+  });
 }
 
 function postgresUrl() {
@@ -371,8 +492,15 @@ async function serveLogo(logoId: number) {
 
 export async function GET(request: Request) {
   try {
-    const logoId = Number(new URL(request.url).searchParams.get("logoId"));
+    const searchParams = new URL(request.url).searchParams;
+    const logoId = Number(searchParams.get("logoId"));
     if (Number.isInteger(logoId) && logoId > 0) return serveLogo(logoId);
+    if (searchParams.get("calendar") === "1") {
+      const data = postgresUrl()
+        ? await readAllPostgres(await postgres())
+        : await readAll(await database());
+      return scheduleCalendarResponse(data as unknown as CalendarData);
+    }
     if (postgresUrl()) {
       return Response.json(await readAllPostgres(await postgres()));
     }
