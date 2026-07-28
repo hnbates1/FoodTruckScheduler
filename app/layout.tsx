@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TruckStop |Food Truck Admin",
+  title: "Food Truck Admin",
   description: "Schedule food-truck visits, manage vendor profiles, and make smarter lineup decisions.",
   other: {
     "codex-preview": "development",
