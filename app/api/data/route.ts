@@ -418,10 +418,10 @@ async function database() {
   const count = await db.prepare("SELECT COUNT(*) AS count FROM trucks").all<{ count: number }>();
   if (!count.results[0]?.count) {
     await db.batch([
-      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Steel City Smash","Smashburgers & Fries","Maya Chen","(412) 555-0188","maya@steelcitysmash.com","2026-10-14","2027-02-28","11:00","15:00",96,"Strong lunch performer. Needs 20A electrical hookup.","#1687ff"),
-      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Taco Loco","Mexican","Luis Ramirez","(330) 555-0142","hello@tacoloco.com","2027-01-09","2026-11-22","12:00","16:00",92,"Fast service and broad menu.","#7ac943"),
-      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Sweet Wheels","Desserts & Coffee","Nina Patel","(234) 555-0171","nina@sweetwheels.com","2026-09-18","2027-03-10","15:00","19:00",88,"Best after 2 PM and during associate events.","#9b6cff"),
-      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Smoke & Oak BBQ","Barbecue","Marcus Reed","(330) 555-0126","marcus@smokeandoak.com","2026-08-21","2026-12-12","11:00","15:00",94,"High draw; allow 30 minutes for setup.","#ff9c42"),
+      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Sample Burger Truck","Smashburgers & Fries","Sample Contact","(202) 555-0101","burgers@example.com","2026-10-14","2027-02-28","11:00","15:00",96,"Demo record. Needs 20A electrical hookup.","#1687ff"),
+      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Sample Taco Truck","Mexican","Sample Contact","(202) 555-0102","tacos@example.com","2027-01-09","2026-11-22","12:00","16:00",92,"Demo record for scheduling.","#7ac943"),
+      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Sample Dessert Truck","Desserts & Coffee","Sample Contact","(202) 555-0103","desserts@example.com","2026-09-18","2027-03-10","15:00","19:00",88,"Demo record for scheduling.","#9b6cff"),
+      db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind("Sample Barbecue Truck","Barbecue","Sample Contact","(202) 555-0104","barbecue@example.com","2026-08-21","2026-12-12","11:00","15:00",94,"Demo record; allow 30 minutes for setup.","#ff9c42"),
     ]);
     await db.batch([
       db.prepare("INSERT INTO visits (truck_id,visit_date,start_time,end_time,status,expected_demand,notes) VALUES (1,'2026-07-27','11:00','14:00','Confirmed','High','')"),
@@ -491,6 +491,8 @@ async function serveLogo(logoId: number) {
 }
 
 export async function GET(request: Request) {
+  const session = await requireSession(request);
+  if ("response" in session) return session.response;
   try {
     const searchParams = new URL(request.url).searchParams;
     const logoId = Number(searchParams.get("logoId"));
@@ -511,6 +513,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const session = await requireSession(request);
+  if ("response" in session) return session.response;
   try {
     const payload = await request.json() as Record<string, unknown>;
     if (payload.kind === "truck" && text(payload.logoData) && !decodeLogo(payload.logoData)) {
@@ -548,6 +552,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const session = await requireSession(request);
+  if ("response" in session) return session.response;
   try {
     const payload = await request.json() as Record<string, unknown>;
     const id = number(payload.id);
@@ -602,6 +608,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const session = await requireSession(request);
+  if ("response" in session) return session.response;
   try {
     const searchParams = new URL(request.url).searchParams;
     const visitId = Number(searchParams.get("visitId"));
@@ -639,3 +647,4 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Unable to delete this truck." }, { status: 500 });
   }
 }
+import { requireSession } from "../../lib/guard";

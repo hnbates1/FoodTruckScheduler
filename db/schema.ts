@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const trucks = sqliteTable("trucks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -29,3 +29,32 @@ export const visits = sqliteTable("visits", {
   expectedDemand: text("expected_demand").notNull().default("Medium"),
   notes: text("notes").notNull().default(""),
 });
+
+export const users = sqliteTable(
+  "users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    name: text("name").notNull().default(""),
+    storeNumber: text("store_number").notNull().default(""),
+    role: text("role").notNull().default("associate"),
+    createdAt: text("created_at").notNull(),
+    lastLoginAt: text("last_login_at").notNull().default(""),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: text("locked_until").notNull().default(""),
+  },
+  (table) => [uniqueIndex("users_email_idx").on(table.email)],
+);
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: integer("user_id").notNull(),
+    createdAt: text("created_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    userAgent: text("user_agent").notNull().default(""),
+  },
+  (table) => [index("sessions_user_idx").on(table.userId)],
+);

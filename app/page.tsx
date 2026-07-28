@@ -41,13 +41,16 @@ type Visit = {
 };
 
 type AppData = { trucks: Truck[]; visits: Visit[]; storage?: "postgres" };
-type View = "dashboard" | "schedule" | "trucks" | "insights";
+type View = "dashboard" | "schedule" | "trucks" | "insights" | "location";
+type SessionUser = { id: number; email: string; name: string; storeNumber: string; role: string };
+type LocationProfile = { storeName: string; storeNumber: string; street: string; city: string; state: string; zip: string; phone: string; timezone: string; notes: string };
 
 const nav: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "schedule", label: "Schedule", icon: "▣" },
   { id: "trucks", label: "Trucks", icon: "▤" },
   { id: "insights", label: "Insights", icon: "◫" },
+  { id: "location", label: "Location", icon: "◧" },
 ];
 
 const weekDays = [
@@ -88,10 +91,10 @@ function standardAvailability(start = "11:00", end = "15:00"): DayAvailability[]
 
 const localSeed: AppData = {
   trucks: [
-    { id: 1, name: "Steel City Smash", cuisine: "Smashburgers & Fries", contact: "Maya Chen", phone: "(412) 555-0188", email: "maya@steelcitysmash.com", insuranceExpiry: "2026-10-14", licenseExpiry: "2027-02-28", preferredStart: "11:00", preferredEnd: "15:00", reliability: 96, notes: "Strong lunch performer. Needs 20A electrical hookup.", color: "#1687ff", availability: standardAvailability() },
-    { id: 2, name: "Taco Loco", cuisine: "Mexican", contact: "Luis Ramirez", phone: "(330) 555-0142", email: "hello@tacoloco.com", insuranceExpiry: "2027-01-09", licenseExpiry: "2026-11-22", preferredStart: "12:00", preferredEnd: "16:00", reliability: 92, notes: "Fast service and broad menu.", color: "#7ac943", availability: standardAvailability("12:00", "16:00") },
-    { id: 3, name: "Sweet Wheels", cuisine: "Desserts & Coffee", contact: "Nina Patel", phone: "(234) 555-0171", email: "nina@sweetwheels.com", insuranceExpiry: "2026-09-18", licenseExpiry: "2027-03-10", preferredStart: "15:00", preferredEnd: "19:00", reliability: 88, notes: "Best after 2 PM and during associate events.", color: "#9b6cff", availability: standardAvailability("15:00", "19:00").map((slot) => ({ ...slot, enabled: slot.day >= 3 && slot.day <= 6 })) },
-    { id: 4, name: "Smoke & Oak BBQ", cuisine: "Barbecue", contact: "Marcus Reed", phone: "(330) 555-0126", email: "marcus@smokeandoak.com", insuranceExpiry: "2026-08-21", licenseExpiry: "2026-12-12", preferredStart: "11:00", preferredEnd: "15:00", reliability: 94, notes: "High draw; allow 30 minutes for setup.", color: "#ff9c42", availability: standardAvailability().map((slot) => ({ ...slot, enabled: [1, 4, 5, 6].includes(slot.day) })) },
+    { id: 1, name: "Sample Burger Truck", cuisine: "Smashburgers & Fries", contact: "Sample Contact", phone: "(202) 555-0101", email: "burgers@example.com", insuranceExpiry: "2026-10-14", licenseExpiry: "2027-02-28", preferredStart: "11:00", preferredEnd: "15:00", reliability: 96, notes: "Demo record. Needs 20A electrical hookup.", color: "#1687ff", availability: standardAvailability() },
+    { id: 2, name: "Sample Taco Truck", cuisine: "Mexican", contact: "Sample Contact", phone: "(202) 555-0102", email: "tacos@example.com", insuranceExpiry: "2027-01-09", licenseExpiry: "2026-11-22", preferredStart: "12:00", preferredEnd: "16:00", reliability: 92, notes: "Demo record for scheduling.", color: "#7ac943", availability: standardAvailability("12:00", "16:00") },
+    { id: 3, name: "Sample Dessert Truck", cuisine: "Desserts & Coffee", contact: "Sample Contact", phone: "(202) 555-0103", email: "desserts@example.com", insuranceExpiry: "2026-09-18", licenseExpiry: "2027-03-10", preferredStart: "15:00", preferredEnd: "19:00", reliability: 88, notes: "Demo record for scheduling.", color: "#9b6cff", availability: standardAvailability("15:00", "19:00").map((slot) => ({ ...slot, enabled: slot.day >= 3 && slot.day <= 6 })) },
+    { id: 4, name: "Sample Barbecue Truck", cuisine: "Barbecue", contact: "Sample Contact", phone: "(202) 555-0104", email: "barbecue@example.com", insuranceExpiry: "2026-08-21", licenseExpiry: "2026-12-12", preferredStart: "11:00", preferredEnd: "15:00", reliability: 94, notes: "Demo record; allow 30 minutes for setup.", color: "#ff9c42", availability: standardAvailability().map((slot) => ({ ...slot, enabled: [1, 4, 5, 6].includes(slot.day) })) },
   ],
   visits: [
     { id: 1, truckId: 1, visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", status: "Confirmed", expectedDemand: "High", notes: "" },
@@ -119,6 +122,22 @@ function minutes(time: string) {
 function timeFromMinutes(value: number) {
   const bounded = Math.max(0, Math.min(1439, value));
   return `${String(Math.floor(bounded / 60)).padStart(2, "0")}:${String(bounded % 60).padStart(2, "0")}`;
+}
+
+const menuStopwords = new Set(["and", "with", "food", "truck", "trucks", "fusion", "style", "fresh", "house", "grill", "kitchen", "more", "other", "custom"]);
+
+function menuWords(cuisine: string) {
+  return cuisine.toLowerCase().split(/[^a-z]+/).filter((word) => word.length >= 4 && !menuStopwords.has(word));
+}
+
+function sharesMenu(left: string, right: string) {
+  const rightWords = new Set(menuWords(right));
+  return menuWords(left).some((word) => rightWords.has(word));
+}
+
+function todayAtNoon() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
 }
 
 function formatTime(time: string) {
@@ -223,8 +242,17 @@ function isTruckAvailableOn(truck: Truck, date: Date) {
 
 export default function Home() {
   const [data, setData] = useState<AppData>(localSeed);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInEmail, setSignInEmail] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
+  const [signInError, setSignInError] = useState("");
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
+  const [setupName, setSetupName] = useState("");
   const [view, setView] = useState<View>("dashboard");
-  const [selectedDate, setSelectedDate] = useState(new Date("2026-07-27T12:00:00"));
+  const [selectedDate, setSelectedDate] = useState(todayAtNoon);
   const [selectedTruckId, setSelectedTruckId] = useState(1);
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<"visit" | "truck" | null>(null);
@@ -232,60 +260,77 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [visitDraft, setVisitDraft] = useState({ visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", truckId: 1 });
+  const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "" });
+
+  async function hydrate() {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/data", { cache: "no-store" });
+      if (!response.ok) throw new Error("Load failed");
+      const remote = await response.json() as AppData;
+      if (remote.trucks?.length) {
+        setData({ ...remote, trucks: remote.trucks.map(withAvailability) });
+        setSelectedTruckId(remote.trucks[0].id);
+      }
+    } catch {
+      notify("Schedule data could not be loaded");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function hydrate() {
-      const saved = window.localStorage.getItem("truckstop-data");
-      let savedData: AppData | null = null;
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved) as AppData;
-          if (parsed.trucks?.length) {
-            savedData = { ...parsed, trucks: parsed.trucks.map(withAvailability) };
-          }
-        } catch {
-          window.localStorage.removeItem("truckstop-data");
-        }
-      }
+    async function restoreSession() {
       try {
-        const response = await fetch("/api/data");
-        if (!response.ok) throw new Error("Load failed");
-        let remote = await response.json() as AppData;
-        if (remote.storage === "postgres" && remote.trucks?.length === 0) {
-          const importResponse = await fetch("/api/data", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ kind: "import", data: savedData ?? localSeed }),
-          });
-          if (importResponse.ok) remote = await importResponse.json() as AppData;
-        }
-        if (remote.trucks?.length) {
-          setData({ ...remote, trucks: remote.trucks.map(withAvailability) });
-          setSelectedTruckId(remote.trucks[0].id);
+        const response = await fetch("/api/auth", { cache: "no-store" });
+        const result = await response.json() as { user?: SessionUser | null; needsSetup?: boolean };
+        setNeedsSetup(Boolean(result.needsSetup));
+        if (response.ok && result.user) {
+          setUser(result.user);
+          await hydrate();
+        } else {
+          setLoading(false);
         }
       } catch {
-        if (savedData?.trucks.length) {
-          setData(savedData);
-          setSelectedTruckId(savedData.trucks[0].id);
-        }
-      } finally {
         setLoading(false);
+      } finally {
+        setAuthLoading(false);
       }
     }
-    void hydrate();
+    void restoreSession();
+    // hydrate intentionally runs once after session restoration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!loading) window.localStorage.setItem("truckstop-data", JSON.stringify(data));
-  }, [data, loading]);
+    if (!loading && user) window.localStorage.setItem("truckstop-data", JSON.stringify(data));
+  }, [data, loading, user]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("truckstop-location");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as LocationProfile;
+        queueMicrotask(() => setLocation(parsed));
+      } catch {
+        window.localStorage.removeItem("truckstop-location");
+      }
+    }
+  }, []);
 
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i - selectedDate.getDay() + 1)), [selectedDate]);
   const dayVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
   const selectedTruck = data.trucks.find((truck) => truck.id === selectedTruckId) ?? data.trucks[0];
 
   const overlaps = useMemo(() => dayVisits.flatMap((a, index) =>
-    dayVisits.slice(index + 1).filter((b) => minutes(a.startTime) < minutes(b.endTime) && minutes(b.startTime) < minutes(a.endTime)).map((b) => [a, b])
-  ), [dayVisits]);
+    dayVisits.slice(index + 1).filter((b) => {
+      const aTruck = data.trucks.find((truck) => truck.id === a.truckId);
+      const bTruck = data.trucks.find((truck) => truck.id === b.truckId);
+      return minutes(a.startTime) < minutes(b.endTime)
+        && minutes(b.startTime) < minutes(a.endTime)
+        && sharesMenu(aTruck?.cuisine || "", bTruck?.cuisine || "");
+    }).map((b) => [a, b])
+  ), [data.trucks, dayVisits]);
 
   const recommendations = useMemo(() => {
     const scheduledIds = new Set(dayVisits.map((visit) => visit.truckId));
@@ -451,6 +496,85 @@ export default function Home() {
     notify("Truck and its scheduled visits deleted");
   }
 
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!signInEmail.trim() || signInPassword.length < 12) {
+      setSignInError("Enter your account email and password (at least 12 characters).");
+      return;
+    }
+    setSigningIn(true);
+    setSignInError("");
+    try {
+      if (needsSetup) {
+        const bootstrap = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "bootstrap", setupToken, email: signInEmail, password: signInPassword, name: setupName, storeNumber: "0244" }),
+        });
+        const bootstrapResult = await bootstrap.json() as { error?: string };
+        if (!bootstrap.ok) {
+          setSignInError(bootstrapResult.error || "The administrator account could not be created.");
+          return;
+        }
+      }
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "login", email: signInEmail, password: signInPassword }),
+      });
+      const result = await response.json() as { user?: SessionUser; error?: string };
+      if (!response.ok || !result.user) {
+        setSignInError(result.error || "That email and password do not match an account.");
+        return;
+      }
+      setUser(result.user);
+      setNeedsSetup(false);
+      setSignInPassword("");
+      await hydrate();
+    } catch {
+      setSignInError("Sign-in is temporarily unavailable.");
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
+  async function signOut() {
+    await fetch("/api/auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "logout" }),
+    }).catch(() => undefined);
+    setUser(null);
+    setSignInPassword("");
+    setView("dashboard");
+  }
+
+  if (authLoading) {
+    return <main className="auth-shell"><div className="auth-loading">Loading TruckStop…</div></main>;
+  }
+
+  if (!user) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card">
+          <div className="auth-brand"><span className="truck-mark">▰</span><strong>TruckStop</strong></div>
+          <p className="auth-kicker">LOWE&apos;S • STORE 0244</p>
+          <h1>{needsSetup ? "Create administrator" : "Welcome back"}</h1>
+          <p>{needsSetup ? "Finish the one-time setup for Store 0244." : "Sign in to manage food trucks, visits, and schedules."}</p>
+          <form onSubmit={signIn}>
+            {needsSetup && <label>Your name<input autoComplete="name" value={setupName} onChange={(event) => { setSetupName(event.target.value); setSignInError(""); }} required /></label>}
+            <label>Email address<input type="email" autoComplete="username" value={signInEmail} onChange={(event) => { setSignInEmail(event.target.value); setSignInError(""); }} placeholder="you@example.com" required /></label>
+            <label>Password<input type="password" autoComplete="current-password" minLength={12} value={signInPassword} onChange={(event) => { setSignInPassword(event.target.value); setSignInError(""); }} placeholder="At least 12 characters" required /></label>
+            {needsSetup && <label>One-time setup token<input type="password" autoComplete="off" value={setupToken} onChange={(event) => { setSetupToken(event.target.value); setSignInError(""); }} required /></label>}
+            {signInError && <div className="auth-error" role="alert">△ {signInError}</div>}
+            <button className="primary auth-submit" type="submit" disabled={signingIn}>{signingIn ? "Working…" : needsSetup ? "Create administrator" : "Sign in"}</button>
+          </form>
+          <small>Accounts are created by the TruckStop administrator.</small>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -463,6 +587,7 @@ export default function Home() {
         </nav>
         <label className="search"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search trucks, cuisine, contacts…" /></label>
         <button className="primary" onClick={() => openVisitModal()}>＋ Schedule Visit</button>
+        <div className="user-menu"><strong>{user.name || user.email}</strong><button type="button" onClick={signOut}>Sign out</button></div>
       </header>
 
       {view === "dashboard" && (
@@ -470,7 +595,7 @@ export default function Home() {
           <section className="main-panel">
             <div className="page-heading">
               <div><p className="eyebrow">OPERATIONS OVERVIEW</p><h1>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</h1></div>
-              <div className="date-actions"><button onClick={() => setSelectedDate(new Date("2026-07-27T12:00:00"))}>Today</button><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div>
+              <div className="date-actions"><button onClick={() => setSelectedDate(todayAtNoon())}>Today</button><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div>
             </div>
 
             <div className="week-strip">
@@ -497,6 +622,7 @@ export default function Home() {
       {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />}
       {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} />}
       {view === "insights" && <Insights data={data} />}
+      {view === "location" && <LocationView location={location} onSave={(next) => { setLocation(next); window.localStorage.setItem("truckstop-location", JSON.stringify(next)); notify("Location profile updated"); }} />}
 
       {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={visitDraft.truckId} selectedDate={visitDraft.visitDate} startTime={visitDraft.startTime} endTime={visitDraft.endTime} onSubmit={submitVisit} /></Modal>}
       {modal === "truck" && <Modal title="Create truck profile" subtitle="Keep contact, compliance, and scheduling preferences together." onClose={() => setModal(null)}><TruckForm onSubmit={submitTruck} /></Modal>}
@@ -525,10 +651,20 @@ type ScheduleContextMenu =
 function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; visitDate: string; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [contextMenu, setContextMenu] = useState<ScheduleContextMenu | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const timelineStart = 600;
   const timelineEnd = 1200;
   const timelineSpan = timelineEnd - timelineStart;
   const shown = visits;
+  const today = dateKey(todayAtNoon());
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const showNow = visitDate === today && nowMinutes >= timelineStart && nowMinutes <= timelineEnd;
+  const nowLeft = ((nowMinutes - timelineStart) / timelineSpan) * 100;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 20_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   function beginDrag(event: ReactPointerEvent<HTMLElement>, visit: Visit, mode: DragState["mode"]) {
     if (visit.id < 0 || event.button !== 0) return;
@@ -594,7 +730,7 @@ function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdate
       const conflict = overlaps.some((pair) => pair.some((item) => item.id === visit.id));
       return <div className="timeline-row" key={visit.id}>
         <button className="truck-label" onClick={() => onSelect(truck.id)}><TruckAvatar truck={truck} /><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>
-        <div className="timeline" onContextMenu={(event) => openTimelineMenu(event, truck.id)}><div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContextMenu({ kind: "visit", x: event.clientX, y: event.clientY, visit, truck }); }} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
+        <div className="timeline" onContextMenu={(event) => openTimelineMenu(event, truck.id)}>{showNow && <span className="now-cursor" style={{ left: `${nowLeft}%` }} aria-hidden="true"><i>NOW</i></span>}<div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContextMenu({ kind: "visit", x: event.clientX, y: event.clientY, visit, truck }); }} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
           {visit.id > 0 && <button className="resize-handle start" aria-label={`Change ${truck.name} start time`} onPointerDown={(event) => beginDrag(event, visit, "start")} />}
           <small>{formatTime(timeFromMinutes(start))} – {formatTime(timeFromMinutes(end))}</small><strong>{truck.name}</strong><span>{visit.status}</span>
           {visit.id > 0 && <button className="resize-handle end" aria-label={`Change ${truck.name} end time`} onPointerDown={(event) => beginDrag(event, visit, "end")} />}
@@ -632,7 +768,13 @@ function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelec
   const days = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i));
   const selectedVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
   const exportCount = data.visits.filter((visit) => visit.status.toLowerCase() !== "cancelled").length;
-  const overlaps = selectedVisits.flatMap((a, index) => selectedVisits.slice(index + 1).filter((b) => minutes(a.startTime) < minutes(b.endTime) && minutes(b.startTime) < minutes(a.endTime)).map((b) => [a, b]));
+  const overlaps = selectedVisits.flatMap((a, index) => selectedVisits.slice(index + 1).filter((b) => {
+    const aTruck = data.trucks.find((truck) => truck.id === a.truckId);
+    const bTruck = data.trucks.find((truck) => truck.id === b.truckId);
+    return minutes(a.startTime) < minutes(b.endTime)
+      && minutes(b.startTime) < minutes(a.endTime)
+      && sharesMenu(aTruck?.cuisine || "", bTruck?.cuisine || "");
+  }).map((b) => [a, b]));
   return <section className="content-page">
     <div className="section-heading">
       <div><p className="eyebrow">VISIT PLANNER</p><h1>Schedule</h1><p>Plan visits, adjust times, or export every non-cancelled visit in Eastern Time.</p></div>
@@ -644,7 +786,7 @@ function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelec
         <button className="primary" onClick={onSchedule}>＋ Schedule Visit</button>
       </div>
     </div>
-    <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(new Date("2026-07-27T12:00:00"))}>Today</button></div>
+    <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(todayAtNoon())}>Today</button></div>
     <div className="week-strip schedule-week">{days.slice(0, 7).map((date) => <button key={dateKey(date)} className={dateKey(date) === dateKey(selectedDate) ? "selected" : ""} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></button>)}</div>
     {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
   </section>;
@@ -697,6 +839,17 @@ function Insights({ data }: { data: AppData }) {
   const cuisineCounts = Object.entries(data.trucks.reduce<Record<string, number>>((acc, truck) => { acc[truck.cuisine] = (acc[truck.cuisine] ?? 0) + 1; return acc; }, {}));
   const max = Math.max(...cuisineCounts.map(([, count]) => count), 1);
   return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">PERFORMANCE SIGNALS</p><h1>Insights</h1><p>Use the lineup you already have to identify gaps and scheduling risk.</p></div></div><div className="insight-grid"><article><span>ACTIVE ROSTER</span><strong>{data.trucks.length}</strong><p>food-truck partners</p></article><article><span>UPCOMING VISITS</span><strong>{data.visits.length}</strong><p>currently planned</p></article><article><span>COMPLIANCE RISK</span><strong>{data.trucks.filter((t) => needsDocumentAttention(t.insuranceExpiry) || needsDocumentAttention(t.licenseExpiry)).length}</strong><p>documents need attention</p></article></div><div className="analysis-card"><h2>Cuisine mix</h2><p>A varied lineup reduces repeat fatigue and gives associates more choice.</p>{cuisineCounts.map(([name, count]) => <div className="bar-row" key={name}><span>{name}</span><i><b style={{ width: `${(count / max) * 100}%` }} /></i><strong>{count}</strong></div>)}</div></section>;
+}
+
+function LocationView({ location, onSave }: { location: LocationProfile; onSave: (location: LocationProfile) => void }) {
+  const [editing, setEditing] = useState(false);
+  const address = [location.street, [location.city, location.state].filter(Boolean).join(", "), location.zip].filter(Boolean).join(" ");
+  if (editing) {
+    return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">STORE PROFILE</p><h1>Location</h1><p>Keep the arrival details vendors need in one place.</p></div></div><article className="location-card"><form className="form-grid" onSubmit={(event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); onSave({ storeName: String(values.storeName), storeNumber: String(values.storeNumber), street: String(values.street), city: String(values.city), state: String(values.state), zip: String(values.zip), phone: String(values.phone), timezone: String(values.timezone), notes: String(values.notes) }); setEditing(false); }}>
+      <label>Store name<input name="storeName" defaultValue={location.storeName} required /></label><label>Store number<input name="storeNumber" defaultValue={location.storeNumber} required /></label><label className="full">Street address<input name="street" defaultValue={location.street} /></label><label>City<input name="city" defaultValue={location.city} /></label><label>State<input name="state" defaultValue={location.state} /></label><label>ZIP<input name="zip" defaultValue={location.zip} /></label><label>Store phone<input name="phone" defaultValue={location.phone} /></label><label className="full">Scheduling time zone<input name="timezone" defaultValue={location.timezone} required /></label><label className="full">Site notes for vendors<textarea name="notes" defaultValue={location.notes} placeholder="Where to park, available hookups, and who to check in with…" /></label><div className="modal-actions full"><button type="button" className="secondary" onClick={() => setEditing(false)}>Cancel</button><button className="primary" type="submit">Save location profile</button></div>
+    </form></article></section>;
+  }
+  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">STORE PROFILE</p><h1>Location</h1><p>The address and arrival details food-truck vendors need.</p></div><button className="primary" onClick={() => setEditing(true)}>✎ Edit details</button></div>{!location.street && <div className="location-warning">△ <span><strong>Store details are incomplete</strong><small>Add the address and phone before the next lineup.</small></span></div>}<article className="location-card"><div className="location-head"><span>◧</span><div><h2>{location.storeName}</h2><p>Store {location.storeNumber}</p></div></div><dl><div><dt>Address</dt><dd>{address || "Not provided"}</dd></div><div><dt>Phone</dt><dd>{location.phone || "Not provided"}</dd></div><div><dt>Time zone</dt><dd>{location.timezone}</dd></div></dl><h4>Site notes for vendors</h4><p>{location.notes || "No arrival notes yet."}</p></article></section>;
 }
 
 function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
