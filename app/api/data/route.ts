@@ -417,10 +417,10 @@ async function database() {
     await db.prepare("ALTER TABLE trucks ADD COLUMN logo_key TEXT NOT NULL DEFAULT ''").run();
   }
   if (!columns.results.some((column) => column.name === "logo_updated_at")) {
-    await db.prepare("ALTER TABLE trucks ADD COLUMN logo_updated_at TEXT NOT NULL DEFAULT '').run();
+    await db.prepare("ALTER TABLE trucks ADD COLUMN logo_updated_at TEXT NOT NULL DEFAULT ''").run();
   }
   if (!columns.results.some((column) => column.name === "payment_types")) {
-    await db.prepare("ALTER TABLE trucks ADD COLUMN payment_types TEXT NOT NULL DEFAULT '').run();
+    await db.prepare("ALTER TABLE trucks ADD COLUMN payment_types TEXT NOT NULL DEFAULT ''").run();
   }
   const count = await db.prepare("SELECT COUNT(*) AS count FROM trucks").all<{ count: number }>();
   if (!count.results[0]?.count) {
