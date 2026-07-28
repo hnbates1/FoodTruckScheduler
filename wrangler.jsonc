@@ -11,14 +11,11 @@
     "not_found_handling": "none",
     "binding": "ASSETS"
   },
-  "images": {
-    "binding": "IMAGES"
-  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "food-truck-admin",
-      "database_id": "00000000-0000-4000-8000-000000000000",
+      "database_id": "ef9a2f0f-cd45-4895-8aca-f389a324b4ec",
       "migrations_dir": "drizzle"
     }
   ],
