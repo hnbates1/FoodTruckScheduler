@@ -1,4 +1,4 @@
-const ITERATIONS = 210_000;
+const ITERATIONS = 100_000;
 const SESSION_DAYS = 14;
 const COOKIE = "truckstop_session";
 const encoder = new TextEncoder();
