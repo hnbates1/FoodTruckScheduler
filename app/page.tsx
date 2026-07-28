@@ -631,9 +631,19 @@ function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelec
   const weekStart = addDays(selectedDate, -selectedDate.getDay() + 1);
   const days = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i));
   const selectedVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
+  const exportCount = data.visits.filter((visit) => visit.status.toLowerCase() !== "cancelled").length;
   const overlaps = selectedVisits.flatMap((a, index) => selectedVisits.slice(index + 1).filter((b) => minutes(a.startTime) < minutes(b.endTime) && minutes(b.startTime) < minutes(a.endTime)).map((b) => [a, b]));
   return <section className="content-page">
-    <div className="section-heading"><div><p className="eyebrow">VISIT PLANNER</p><h1>Schedule</h1><p>Plan upcoming visits and adjust times directly on the schedule.</p></div><div className="heading-actions"><div className="view-toggle"><button className={mode === "gantt" ? "active" : ""} onClick={() => setMode("gantt")}>▤ Daily Gantt</button><button className={mode === "calendar" ? "active" : ""} onClick={() => setMode("calendar")}>▦ Calendar</button></div><button className="primary" onClick={onSchedule}>＋ Schedule Visit</button></div></div>
+    <div className="section-heading">
+      <div><p className="eyebrow">VISIT PLANNER</p><h1>Schedule</h1><p>Plan visits, adjust times, or export every non-cancelled visit in Eastern Time.</p></div>
+      <div className="heading-actions">
+        <div className="view-toggle"><button className={mode === "gantt" ? "active" : ""} onClick={() => setMode("gantt")}>▤ Daily Gantt</button><button className={mode === "calendar" ? "active" : ""} onClick={() => setMode("calendar")}>▦ Calendar</button></div>
+        <a className={`secondary calendar-export ${exportCount ? "" : "disabled"}`} href={exportCount ? "/api/data?calendar=1" : undefined} aria-disabled={!exportCount} download>
+          <span aria-hidden="true">⇩</span><span><strong>Export All to Calendar</strong><small>{exportCount} {exportCount === 1 ? "visit" : "visits"} • .ics</small></span>
+        </a>
+        <button className="primary" onClick={onSchedule}>＋ Schedule Visit</button>
+      </div>
+    </div>
     <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(new Date("2026-07-27T12:00:00"))}>Today</button></div>
     <div className="week-strip schedule-week">{days.slice(0, 7).map((date) => <button key={dateKey(date)} className={dateKey(date) === dateKey(selectedDate) ? "selected" : ""} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></button>)}</div>
     {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
