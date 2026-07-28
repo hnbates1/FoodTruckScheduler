@@ -308,16 +308,24 @@ export default function Home() {
   }, [data, loading, user]);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("truckstop-location");
-    if (saved) {
+    async function loadLocation() {
       try {
-        const parsed = JSON.parse(saved) as LocationProfile;
-        queueMicrotask(() => setLocation(parsed));
+        const response = await fetch("/api/location", { cache: "no-store" });
+        const result = await response.json() as { location?: LocationProfile | null };
+        if (response.ok && result.location) {
+          setLocation(result.location);
+          return;
+        }
       } catch {
-        window.localStorage.removeItem("truckstop-location");
+        // Fall through to the last locally cached profile.
+      }
+      const saved = window.localStorage.getItem("food-truck-admin-location");
+      if (saved) {
+        try { setLocation(JSON.parse(saved) as LocationProfile); } catch { window.localStorage.removeItem("food-truck-admin-location"); }
       }
     }
-  }, []);
+    if (user) void loadLocation();
+  }, [user]);
 
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i - selectedDate.getDay() + 1)), [selectedDate]);
   const dayVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
@@ -625,7 +633,7 @@ export default function Home() {
       {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />}
       {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} />}
       {view === "insights" && <Insights data={data} />}
-      {view === "location" && <LocationView location={location} onSave={(next) => { setLocation(next); window.localStorage.setItem("truckstop-location", JSON.stringify(next)); notify("Location profile updated"); }} />}
+      {view === "location" && <LocationView location={location} onSave={(next) => { setLocation(next); window.localStorage.setItem("food-truck-admin-location", JSON.stringify(next)); void fetch("/api/location", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) }).then((response) => { if (!response.ok) throw new Error(); notify("Location profile updated"); }).catch(() => notify("Location saved locally, but could not be shared")); }} />}
 
       {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={visitDraft.truckId} selectedDate={visitDraft.visitDate} startTime={visitDraft.startTime} endTime={visitDraft.endTime} onSubmit={submitVisit} /></Modal>}
       {modal === "truck" && <Modal title="Create truck profile" subtitle="Keep contact, compliance, and scheduling preferences together." onClose={() => setModal(null)}><TruckForm onSubmit={submitTruck} /></Modal>}
