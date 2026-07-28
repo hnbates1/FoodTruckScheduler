@@ -66,8 +66,9 @@ export function passwordProblem(password: string) {
   return null;
 }
 
-function sessionSecret() {
-  const value = process.env.SESSION_SECRET?.trim();
+async function sessionSecret() {
+  const { env } = await import("cloudflare:workers");
+  const value = (env as unknown as { SESSION_SECRET?: string }).SESSION_SECRET?.trim();
   if (!value) throw new Error("SESSION_SECRET is not set");
   return value;
 }
@@ -75,7 +76,7 @@ function sessionSecret() {
 async function sign(token: string) {
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(sessionSecret()),
+    encoder.encode(await sessionSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
