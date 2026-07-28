@@ -1,0 +1,94 @@
+name: Deploy Food Truck Admin
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: food-truck-admin-production
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  FORCE_COLOR: "0"
+
+jobs:
+  deploy:
+    name: Test, migrate, and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run production tests
+        run: npm test
+
+      - name: Verify Cloudflare authentication
+        run: npx wrangler whoami
+
+      - name: Verify D1 database
+        run: npx wrangler d1 info food-truck-admin
+
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply food-truck-admin --remote
+
+      - name: Verify R2 bucket
+        run: npx wrangler r2 bucket info food-truck-admin-logos
+
+      - name: Configure SESSION_SECRET
+        run: printf '%s' '${{ secrets.SESSION_SECRET }}' | npx wrangler secret put SESSION_SECRET
+
+      - name: Configure SETUP_TOKEN
+        run: printf '%s' '${{ secrets.SETUP_TOKEN }}' | npx wrangler secret put SETUP_TOKEN
+
+      - name: Deploy Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler deploy 2>&1 | tee deploy-output.txt
+          WORKER_URL=$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' deploy-output.txt | tail -1)
+          if [ -z "$WORKER_URL" ]; then
+            echo "Could not determine the workers.dev deployment URL."
+            exit 1
+          fi
+          echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Test workers.dev deployment
+        shell: bash
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          curl --fail --show-error --silent \
+            --retry 6 --retry-all-errors --retry-delay 5 \
+            --output homepage.html "$WORKER_URL/"
+          curl --fail --show-error --silent \
+            --retry 6 --retry-all-errors --retry-delay 5 \
+            --output auth.json "$WORKER_URL/api/auth"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('auth.json','utf8')); if (!Object.prototype.hasOwnProperty.call(x,'needsSetup')) throw new Error('Auth health response is missing needsSetup'); console.log('workers.dev smoke tests passed:', process.env.WORKER_URL);"
+
+      - name: Deployment summary
+        run: |
+          echo "## Food Truck Admin deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Worker: food-truck-admin" >> "$GITHUB_STEP_SUMMARY"
+          echo "- D1: food-truck-admin" >> "$GITHUB_STEP_SUMMARY"
+          echo "- R2: food-truck-admin-logos" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: ${{ steps.deploy.outputs.worker_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Custom domain: not connected" >> "$GITHUB_STEP_SUMMARY"
