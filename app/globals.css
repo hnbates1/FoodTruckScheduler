@@ -299,3 +299,5 @@ dd { margin:0; overflow-wrap:anywhere; }
 @media(max-width:760px){.admin-grid{grid-template-columns:1fr}.user-row{grid-template-columns:1fr 1fr}.payment-options{grid-template-columns:1fr 1fr}.public-day article{flex-direction:column}}
 
 .role-associate .section-heading>.primary,.role-associate .schedule-context-menu{display:none!important}
+
+.role-associate .visit-block{pointer-events:none}
