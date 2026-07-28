@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "food-truck-admin",
-      "database_id": "ef9a2f0fcd4548958acaf389a324b4ec",
+      "database_id": "ef9a2f0f-cd45-4895-8aca-f389a324b4ec",
       "migrations_dir": "drizzle"
     }
   ],
