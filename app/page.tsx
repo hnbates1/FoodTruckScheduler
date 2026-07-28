@@ -49,6 +49,36 @@ type AppData = { trucks: Truck[]; visits: Visit[]; storage?: "postgres" };
 type View = "dashboard" | "schedule" | "trucks" | "insights" | "location";
 type SessionUser = { id: number; email: string; name: string; storeNumber: string; role: string };
 type LocationProfile = { storeName: string; storeNumber: string; street: string; city: string; state: string; zip: string; phone: string; timezone: string; notes: string; operatingHours: DayAvailability[]; closedDates: string[] };
+type GooglePlaceProfile = {
+  placeId: string;
+  name: string;
+  address: string;
+  mapsUri: string;
+  websiteUri: string;
+  rating: number | null;
+  ratingCount: number;
+  summary: string;
+  summaryDisclosure: string;
+  summaryReviewsUri: string;
+  summaryFlagUri: string;
+};
+type GoogleReviewState = {
+  loading: boolean;
+  configured?: boolean;
+  linked?: boolean;
+  dailyLimit?: number;
+  profile?: GooglePlaceProfile;
+  error?: string;
+};
+type GoogleReviewResponse = {
+  configured?: boolean;
+  linked?: boolean;
+  dailyLimit?: number;
+  profile?: GooglePlaceProfile;
+  candidates?: GooglePlaceProfile[];
+  query?: string;
+  error?: string;
+};
 
 const nav: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
@@ -267,6 +297,12 @@ export default function Home() {
   const [outcomeVisitId, setOutcomeVisitId] = useState<number | null>(null);
   const [visitDraft, setVisitDraft] = useState({ visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", truckId: 1 });
   const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "", operatingHours: weekDays.map(({ day }) => ({ day, enabled: day >= 1 && day <= 6, start: "06:00", end: "22:00" })), closedDates: [] });
+  const [googleReviews, setGoogleReviews] = useState<Record<number, GoogleReviewState>>({});
+  const [googleSearchTruckId, setGoogleSearchTruckId] = useState<number | null>(null);
+  const [googleCandidates, setGoogleCandidates] = useState<GooglePlaceProfile[]>([]);
+  const [googleSearchQuery, setGoogleSearchQuery] = useState("");
+  const [googleSearchBusy, setGoogleSearchBusy] = useState(false);
+  const [googleSearchError, setGoogleSearchError] = useState("");
 
   async function hydrate() {
     setLoading(true);
@@ -452,6 +488,118 @@ export default function Home() {
     }
   }
 
+  async function loadGoogleReview(truckId: number) {
+    setGoogleReviews((current) => ({
+      ...current,
+      [truckId]: { ...current[truckId], loading: true, error: "" },
+    }));
+    try {
+      const response = await fetch(`/api/reviews?truckId=${truckId}`, {
+        cache: "no-store",
+      });
+      const result = await response.json() as GoogleReviewResponse;
+      if (!response.ok) throw new Error(result.error || "The Google listing could not be loaded.");
+      setGoogleReviews((current) => ({
+        ...current,
+        [truckId]: {
+          loading: false,
+          configured: result.configured,
+          linked: result.linked,
+          dailyLimit: result.dailyLimit,
+          profile: result.profile,
+        },
+      }));
+    } catch (error) {
+      setGoogleReviews((current) => ({
+        ...current,
+        [truckId]: {
+          ...current[truckId],
+          loading: false,
+          error: error instanceof Error ? error.message : "The Google listing could not be loaded.",
+        },
+      }));
+    }
+  }
+
+  async function searchGooglePlaces(truckId: number) {
+    setGoogleSearchTruckId(truckId);
+    setGoogleCandidates([]);
+    setGoogleSearchQuery("");
+    setGoogleSearchError("");
+    setGoogleSearchBusy(true);
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "search", truckId }),
+      });
+      const result = await response.json() as GoogleReviewResponse;
+      if (!response.ok) throw new Error(result.error || "Google could not search for this truck.");
+      setGoogleCandidates(result.candidates || []);
+      setGoogleSearchQuery(result.query || "");
+    } catch (error) {
+      setGoogleSearchError(error instanceof Error ? error.message : "Google could not search for this truck.");
+    } finally {
+      setGoogleSearchBusy(false);
+    }
+  }
+
+  async function linkGooglePlace(truckId: number, placeId: string) {
+    setGoogleSearchBusy(true);
+    setGoogleSearchError("");
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "link", truckId, placeId }),
+      });
+      const result = await response.json() as GoogleReviewResponse;
+      if (!response.ok || !result.profile) {
+        throw new Error(result.error || "That Google listing could not be connected.");
+      }
+      setGoogleReviews((current) => ({
+        ...current,
+        [truckId]: {
+          loading: false,
+          configured: true,
+          linked: true,
+          dailyLimit: result.dailyLimit,
+          profile: result.profile,
+        },
+      }));
+      setGoogleSearchTruckId(null);
+      setGoogleCandidates([]);
+      notify("Google listing connected");
+    } catch (error) {
+      setGoogleSearchError(error instanceof Error ? error.message : "That Google listing could not be connected.");
+    } finally {
+      setGoogleSearchBusy(false);
+    }
+  }
+
+  async function unlinkGooglePlace(truckId: number) {
+    if (!window.confirm("Disconnect this Google listing? The truck profile and schedule will not be affected.")) return;
+    try {
+      const response = await fetch(`/api/reviews?truckId=${truckId}`, {
+        method: "DELETE",
+      });
+      const result = await response.json() as GoogleReviewResponse;
+      if (!response.ok) throw new Error(result.error || "The Google listing could not be disconnected.");
+      setGoogleReviews((current) => ({
+        ...current,
+        [truckId]: {
+          loading: false,
+          configured: result.configured,
+          linked: false,
+          dailyLimit: result.dailyLimit,
+        },
+      }));
+      notify("Google listing disconnected");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Google listing could not be disconnected");
+    }
+  }
+
   function openVisitModal(visitDate = dateKey(selectedDate), startTime = "11:00", truckId = selectedTruckId) {
     const endTime = timeFromMinutes(Math.min(1200, minutes(startTime) + 180));
     setVisitDraft({ visitDate, startTime, endTime, truckId });
@@ -612,6 +760,7 @@ export default function Home() {
             <button className="primary auth-submit" type="submit" disabled={signingIn}>{signingIn ? "Working…" : needsSetup ? "Create administrator" : "Sign in"}</button>
           </form>
           <small>Accounts are created by the Food Truck Admin administrator.</small>
+          <nav className="legal-links" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
         </section>
       </main>
     );
@@ -663,14 +812,28 @@ export default function Home() {
       )}
 
       {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />}
-      {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} />}
+      {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} role={user.role} googleReviews={googleReviews} onLoadGoogleReview={loadGoogleReview} onSearchGooglePlaces={searchGooglePlaces} onUnlinkGooglePlace={unlinkGooglePlace} />}
       {view === "insights" && <Insights data={data} />}
       {view === "location" && <LocationView location={location} onSave={(next) => { setLocation(next); window.localStorage.setItem("food-truck-admin-location", JSON.stringify(next)); void fetch("/api/location", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) }).then((response) => { if (!response.ok) throw new Error(); notify("Location profile updated"); }).catch(() => notify("Location saved locally, but could not be shared")); }} />}
 
       {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={visitDraft.truckId} selectedDate={visitDraft.visitDate} startTime={visitDraft.startTime} endTime={visitDraft.endTime} onSubmit={submitVisit} /></Modal>}
       {modal === "truck" && <Modal title="Create truck profile" subtitle="Keep contact, compliance, and scheduling preferences together." onClose={() => setModal(null)}><TruckForm onSubmit={submitTruck} /></Modal>}
       {outcomeVisit && outcomeTruck && ["admin", "manager"].includes(user.role) && <Modal title={`Record outcome for ${outcomeTruck.name}`} subtitle={`${new Date(`${outcomeVisit.visitDate}T12:00:00`).toLocaleDateString()} • ${formatTime(outcomeVisit.startTime)} – ${formatTime(outcomeVisit.endTime)}`} onClose={() => setOutcomeVisitId(null)}><OutcomeForm visit={outcomeVisit} onSubmit={submitVisitOutcome} /></Modal>}
+      {googleSearchTruckId !== null && <Modal title={`Match ${data.trucks.find((truck) => truck.id === googleSearchTruckId)?.name || "truck"}`} subtitle="Choose the exact Google business listing. Nothing is saved until you select a match." onClose={() => { if (!googleSearchBusy) setGoogleSearchTruckId(null); }}>
+        <div className="google-match-list">
+          {googleSearchBusy && !googleCandidates.length && <div className="google-loading">Searching Google Maps…</div>}
+          {googleSearchError && <div className="auth-error" role="alert">△ {googleSearchError}</div>}
+          {!googleSearchBusy && !googleSearchError && googleSearchQuery && <small>Search: {googleSearchQuery}</small>}
+          {!googleSearchBusy && !googleSearchError && !googleCandidates.length && <div className="google-empty"><strong>No confident matches found.</strong><p>Add the store city, state, and ZIP on the Location page, check the truck name, then try again.</p></div>}
+          {googleCandidates.map((candidate) => <article key={candidate.placeId} className="google-candidate">
+            <div><strong>{candidate.name || "Unnamed Google listing"}</strong><p>{candidate.address || "Address not shown"}</p><small>{candidate.rating === null ? "No Google rating" : `★ ${candidate.rating.toFixed(1)} from ${candidate.ratingCount.toLocaleString()} ratings`}</small></div>
+            <button className="primary" disabled={googleSearchBusy} onClick={() => void linkGooglePlace(googleSearchTruckId, candidate.placeId)}>Use this listing</button>
+          </article>)}
+          <div className="google-attribution" translate="no">Google Maps</div>
+        </div>
+      </Modal>}
       {pendingDeleteId !== null && <DeleteTruckModal truck={data.trucks.find((truck) => truck.id === pendingDeleteId)} visitCount={data.visits.filter((visit) => visit.truckId === pendingDeleteId).length} onCancel={() => setPendingDeleteId(null)} onConfirm={() => deleteTruck(pendingDeleteId)} />}
+      <footer className="app-legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></footer>
       {toast && <div className="toast">✓ {toast}</div>}
       {loading && <div className="sync-note">Syncing schedule…</div>}
     </main>
@@ -856,7 +1019,96 @@ function TruckLogoEditor({ truck, onChange }: { truck: Truck; onChange: (file: F
   </div>;
 }
 
-function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete, onLogoChange }: { trucks: Truck[]; selectedId: number; setSelectedId: (id: number) => void; onAdd: () => void; onDelete: (id: number) => void; onLogoChange: (truckId: number, file: File | null) => Promise<void> }) {
+function OnlineReviewCard({
+  truck,
+  role,
+  state,
+  onLoad,
+  onSearch,
+  onUnlink,
+}: {
+  truck: Truck;
+  role: string;
+  state?: GoogleReviewState;
+  onLoad: () => void;
+  onSearch: () => void;
+  onUnlink: () => void;
+}) {
+  const canEdit = ["admin", "manager"].includes(role);
+  const profile = state?.profile;
+  return <section className="google-review-card">
+    <div className="google-review-heading">
+      <div><p className="eyebrow">ONLINE REPUTATION</p><h4>Google rating</h4></div>
+      <span className="google-attribution" translate="no">Google Maps</span>
+    </div>
+    {!state && <>
+      <p>Load this truck&apos;s live Google rating only when you need it. This controls API use and avoids showing stale information.</p>
+      <button className="secondary" onClick={onLoad}>Load live Google rating</button>
+    </>}
+    {state?.loading && <div className="google-loading">Checking Google Maps…</div>}
+    {state?.error && !state.loading && <>
+      <div className="auth-error" role="alert">△ {state.error}</div>
+      <button className="secondary" onClick={onLoad}>Try again</button>
+    </>}
+    {state && !state.loading && !state.error && state.configured === false && <>
+      <div className="google-empty"><strong>Google Places is not connected yet.</strong><p>The truck profile and every scheduling feature still work normally. An administrator can add the key later.</p></div>
+      {state.linked && <small>The previously selected Google listing remains safely linked.</small>}
+    </>}
+    {state && !state.loading && !state.error && state.configured && !state.linked && <>
+      <div className="google-empty"><strong>No Google listing selected.</strong><p>Match this truck to its public business listing before loading a rating.</p></div>
+      {canEdit && <button className="primary" onClick={onSearch}>Find Google listing</button>}
+    </>}
+    {state && !state.loading && !state.error && profile && <>
+      <div className="google-score">
+        <strong>{profile.rating === null ? "—" : profile.rating.toFixed(1)}</strong>
+        <span><b aria-hidden="true">★★★★★</b><small>{profile.ratingCount.toLocaleString()} Google {profile.ratingCount === 1 ? "rating" : "ratings"}</small></span>
+      </div>
+      <div className="google-place-name"><strong>{profile.name || truck.name}</strong><p>{profile.address || "Address not shown by Google"}</p></div>
+      {profile.summary
+        ? <div className="google-summary"><strong>Review summary</strong><blockquote><p>{profile.summary}</p><footer>{profile.summaryDisclosure}</footer></blockquote></div>
+        : <p className="google-no-summary">Google does not currently provide an AI review summary for this listing.</p>}
+      <div className="google-source-links">
+        {profile.summary && <a href="https://support.google.com/local-listings/answer/9851099" target="_blank" rel="noreferrer">About this summary ↗</a>}
+        {(profile.summaryReviewsUri || profile.mapsUri) && <a href={profile.summaryReviewsUri || profile.mapsUri} target="_blank" rel="noreferrer">See reviews ↗</a>}
+        {profile.websiteUri && <a href={profile.websiteUri} target="_blank" rel="noreferrer">Business website ↗</a>}
+        {profile.summaryFlagUri && <a href={profile.summaryFlagUri} target="_blank" rel="noreferrer">Report summary ↗</a>}
+      </div>
+      {profile.summaryFlagUri && <small className="google-report-note">To request removal of summary content under applicable law, use Report summary.</small>}
+      <div className="google-review-actions">
+        <button className="secondary" onClick={onLoad}>Refresh live rating</button>
+        {canEdit && <button className="secondary" onClick={onSearch}>Change match</button>}
+        {canEdit && <button className="text-button danger-text" onClick={onUnlink}>Disconnect</button>}
+      </div>
+    </>}
+    <small className="google-usage-note">Live lookup • App safety limit: {state?.dailyLimit || 20} Google requests per day • Only the Place ID is stored</small>
+  </section>;
+}
+
+function TrucksView({
+  trucks,
+  selectedId,
+  setSelectedId,
+  onAdd,
+  onDelete,
+  onLogoChange,
+  role,
+  googleReviews,
+  onLoadGoogleReview,
+  onSearchGooglePlaces,
+  onUnlinkGooglePlace,
+}: {
+  trucks: Truck[];
+  selectedId: number;
+  setSelectedId: (id: number) => void;
+  onAdd: () => void;
+  onDelete: (id: number) => void;
+  onLogoChange: (truckId: number, file: File | null) => Promise<void>;
+  role: string;
+  googleReviews: Record<number, GoogleReviewState>;
+  onLoadGoogleReview: (truckId: number) => void;
+  onSearchGooglePlaces: (truckId: number) => void;
+  onUnlinkGooglePlace: (truckId: number) => void;
+}) {
   const selected = trucks.find((t) => t.id === selectedId) ?? trucks[0];
   return <section className="content-page">
     <div className="section-heading"><div><p className="eyebrow">VENDOR DIRECTORY</p><h1>Food Trucks</h1><p>Profiles, contact details, documents, and weekly availability.</p></div><button className="primary" onClick={onAdd}>＋ Add Truck</button></div>
@@ -873,6 +1125,7 @@ function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete, onLogo
         <h4>Weekly availability</h4>
         <div className="availability-summary">{withAvailability(selected).availability.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Unavailable"}</span></div>)}</div>
         <h4>Operations notes</h4><p>{selected.notes || "No notes yet."}</p>
+        <OnlineReviewCard truck={selected} role={role} state={googleReviews[selected.id]} onLoad={() => void onLoadGoogleReview(selected.id)} onSearch={() => void onSearchGooglePlaces(selected.id)} onUnlink={() => void onUnlinkGooglePlace(selected.id)} />
         <button className="danger-button" onClick={() => onDelete(selected.id)}>Delete Truck</button>
       </article>}
     </div> : <div className="empty-state"><h2>No truck profiles yet</h2><p>Add your first vendor to begin scheduling visits.</p><button className="primary" onClick={onAdd}>＋ Add Truck</button></div>}

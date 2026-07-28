@@ -310,6 +310,53 @@ dd { margin:0; overflow-wrap:anywhere; }
 .role-associate .visit-block{pointer-events:none}
 .role-associate .outcome-action{pointer-events:none}
 
+.google-review-card{margin:22px 0;padding:17px;border:1px solid #31516f;border-radius:10px;background:linear-gradient(145deg,#0b2036,#0a1a2e)}
+.google-review-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.google-review-heading h4{margin:0;font-size:18px}
+.google-review-card>p{color:#9bb0c5;line-height:1.55;font-size:11px}
+.google-attribution{display:inline-flex;align-items:center;width:max-content;padding:5px 8px;border:1px solid #d7d7d7;border-radius:4px;background:#fff;color:#1f1f1f;font-family:Roboto,Arial,sans-serif;font-size:12px;font-style:normal;font-weight:400;letter-spacing:normal;white-space:nowrap}
+.google-loading,.google-empty{padding:13px;border:1px solid #2d506d;border-radius:8px;background:#081a2e;color:#9eb4ca;font-size:11px}
+.google-empty strong{display:block;color:#dceaff;font-size:12px}
+.google-empty p{margin:5px 0 0;color:#8da4bb;line-height:1.5;font-size:10px}
+.google-score{display:flex;align-items:center;gap:13px;margin:8px 0 13px}
+.google-score>strong{font-size:38px;line-height:1;color:#f4f8ff}
+.google-score span,.google-score small{display:block}
+.google-score b{color:#fbbc04;letter-spacing:2px}
+.google-score small{margin-top:5px;color:#91a8bf;font-size:10px}
+.google-place-name{padding-bottom:12px;border-bottom:1px solid #24415d}
+.google-place-name strong{font-size:13px}
+.google-place-name p{margin:4px 0 0;color:#91a8bf;font-size:10px}
+.google-summary>strong{display:block;margin-top:13px;font-size:12px}
+.google-review-card blockquote{margin:13px 0;padding:13px;border-left:3px solid #6e8fab;border-radius:0 7px 7px 0;background:#081a2e}
+.google-review-card blockquote p{margin:0;color:#d8e6f4;line-height:1.55;font-size:11px}
+.google-review-card blockquote footer{margin-top:9px;color:#839ab2;font-size:9px}
+.google-no-summary{padding:11px;border:1px dashed #31516f;border-radius:7px}
+.google-source-links,.google-review-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px}
+.google-source-links a{color:#70b8f5;font-size:10px;text-decoration:none}
+.google-source-links a:hover{text-decoration:underline}
+.google-report-note{display:block;margin-top:9px;color:#718ba4;font-size:8px;line-height:1.5}
+.google-review-actions button{font-size:10px}
+.google-usage-note{display:block;margin-top:13px;color:#6f879f;font-size:8px;line-height:1.5}
+.google-match-list{display:grid;gap:10px;margin-top:18px}
+.google-match-list>small{color:#8098b0;font-size:9px}
+.google-candidate{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px;border:1px solid #2a4e6d;border-radius:8px;background:#081a2e}
+.google-candidate strong,.google-candidate p,.google-candidate small{display:block}
+.google-candidate p{margin:4px 0;color:#91a8bf;font-size:10px}
+.google-candidate small{color:#f7cd55;font-size:9px}
+.google-candidate .primary{flex:0 0 auto;padding:9px 11px;font-size:10px}
+.legal-links,.app-legal{display:flex;justify-content:center;gap:14px}
+.legal-links{margin-top:14px}
+.legal-links a,.app-legal a{color:#7897b3;font-size:9px;text-decoration:none}
+.legal-links a:hover,.app-legal a:hover{color:#b8d8f5;text-decoration:underline}
+.app-legal{padding:20px 12px 28px}
+.legal-page{min-height:100vh;padding:44px 20px;background:#07182a;color:#eef6ff}
+.legal-page article{max-width:760px;margin:0 auto;padding:30px;border:1px solid #284d6d;border-radius:12px;background:#0a2037}
+.legal-page h1{margin-bottom:20px;font-size:36px}
+.legal-page h2{margin:24px 0 7px;font-size:18px}
+.legal-page p{color:#a9bdd0;line-height:1.7;font-size:13px}
+.legal-page a:not(.secondary){color:#70b8f5}
+.legal-page .secondary{display:inline-block;margin-top:20px;text-decoration:none}
+
 /* Mobile-first application shell */
 @media(max-width:760px){
   body{overflow-x:hidden}
@@ -340,6 +387,9 @@ dd { margin:0; overflow-wrap:anywhere; }
   .auth-shell{padding:14px}.auth-card{padding:24px 18px}.auth-card h1{font-size:26px}
   .admin-shell{padding:18px 12px 82px}.admin-header{align-items:flex-start;flex-direction:column}.admin-header h1{font-size:28px}.admin-header .secondary{width:100%;text-align:center}.admin-grid{grid-template-columns:1fr}.admin-card{padding:16px}.permission-key{display:grid;grid-template-columns:1fr}.user-table{display:grid;gap:10px}.user-head{display:none}.user-row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:14px;border:1px solid #24415d;border-radius:8px;background:#081a2e}.user-row>span:nth-child(3){grid-column:1/-1}.user-row select{max-width:130px}.admin-actions>*{flex:1}.share-field input{font-size:12px}
   .public-schedule{padding:26px 12px}.public-schedule h1{font-size:30px}.public-day{padding:14px}.public-day article{align-items:flex-start;flex-direction:column;gap:10px}.public-day article>strong{white-space:normal}
+  .google-review-card{padding:14px}.google-review-heading{align-items:flex-start}.google-score>strong{font-size:32px}.google-review-actions{align-items:stretch;flex-direction:column}.google-review-actions button{width:100%}
+  .google-candidate{align-items:stretch;flex-direction:column}.google-candidate .primary{width:100%}
+  .app-legal{padding-bottom:84px}.legal-page{padding:18px 12px}.legal-page article{padding:22px 17px}.legal-page h1{font-size:30px}
 }
 @media(max-width:390px){
   .topbar{grid-template-columns:minmax(0,1fr) auto}.topbar>.primary{grid-column:1/-1;width:100%}.user-menu strong{max-width:105px}

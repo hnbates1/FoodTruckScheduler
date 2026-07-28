@@ -67,3 +67,22 @@ export const appSettings = sqliteTable("app_settings", {
   value: text("value").notNull().default(""),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const truckGooglePlaces = sqliteTable(
+  "truck_google_places",
+  {
+    truckId: integer("truck_id")
+      .primaryKey()
+      .references(() => trucks.id, { onDelete: "cascade" }),
+    placeId: text("place_id").notNull(),
+    linkedAt: text("linked_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("truck_google_places_place_id_idx").on(table.placeId),
+  ],
+);
+
+export const googlePlacesDailyUsage = sqliteTable("google_places_daily_usage", {
+  usageDate: text("usage_date").primaryKey(),
+  requestCount: integer("request_count").notNull().default(0),
+});

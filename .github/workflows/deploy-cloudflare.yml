@@ -58,6 +58,17 @@ jobs:
       - name: Configure SETUP_TOKEN
         run: printf '%s' '${{ secrets.SETUP_TOKEN }}' | npx wrangler secret put SETUP_TOKEN
 
+      - name: Configure GOOGLE_PLACES_API_KEY
+        shell: bash
+        env:
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+        run: |
+          if [ -n "$GOOGLE_PLACES_API_KEY" ]; then
+            printf '%s' "$GOOGLE_PLACES_API_KEY" | npx wrangler secret put GOOGLE_PLACES_API_KEY
+          else
+            echo "GOOGLE_PLACES_API_KEY is not configured; online ratings will remain disabled."
+          fi
+
       - name: Deploy Worker
         id: deploy
         shell: bash
@@ -84,6 +95,17 @@ jobs:
             --output auth.json "$WORKER_URL/api/auth"
           node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('auth.json','utf8')); if (!Object.prototype.hasOwnProperty.call(x,'needsSetup')) throw new Error('Auth health response is missing needsSetup'); console.log('workers.dev smoke tests passed:', process.env.WORKER_URL);"
 
+      - name: Test custom domain deployment
+        shell: bash
+        run: |
+          curl --fail --show-error --silent \
+            --retry 6 --retry-all-errors --retry-delay 5 \
+            --output custom-homepage.html "https://foodtruckadmin.com/"
+          curl --fail --show-error --silent \
+            --retry 6 --retry-all-errors --retry-delay 5 \
+            --output custom-auth.json "https://foodtruckadmin.com/api/auth"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('custom-auth.json','utf8')); if (!Object.prototype.hasOwnProperty.call(x,'needsSetup')) throw new Error('Custom-domain auth health response is missing needsSetup'); console.log('foodtruckadmin.com smoke tests passed');"
+
       - name: Deployment summary
         run: |
           echo "## Food Truck Admin deployment" >> "$GITHUB_STEP_SUMMARY"
@@ -91,4 +113,5 @@ jobs:
           echo "- D1: food-truck-admin" >> "$GITHUB_STEP_SUMMARY"
           echo "- R2: food-truck-admin-logos" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL: ${{ steps.deploy.outputs.worker_url }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Custom domain: not connected" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Custom domain: https://foodtruckadmin.com" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Google Places: optional; enabled when GOOGLE_PLACES_API_KEY is configured" >> "$GITHUB_STEP_SUMMARY"
