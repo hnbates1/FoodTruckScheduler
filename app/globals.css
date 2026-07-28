@@ -123,6 +123,13 @@ dd { margin:0; overflow-wrap:anywhere; }
 .section-heading h1 { font-size:34px; }
 .section-heading p { color:var(--muted); font-size:13px; }
 .heading-actions { display:flex;align-items:center;gap:12px; }
+.calendar-export { min-height:43px;display:flex;align-items:center;gap:8px;padding:7px 12px!important;text-decoration:none;white-space:nowrap; }
+.calendar-export>span:first-child { width:25px;height:25px;display:grid;place-items:center;border-radius:6px;background:#143c61;color:#71baff;font-size:16px; }
+.calendar-export strong,.calendar-export small { display:block; }
+.calendar-export strong { font-size:10px; }
+.calendar-export small { margin-top:2px;color:#8299b1;font-size:8px;font-weight:600; }
+.calendar-export:hover { border-color:#4b759b;background:#12304f; }
+.calendar-export.disabled { opacity:.45;pointer-events:none; }
 .schedule-datebar { display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;padding:12px 14px;border:1px solid #234564;border-radius:9px;background:#0a2038; }
 .schedule-datebar>div { display:flex;align-items:center;gap:14px; }
 .schedule-datebar>div button { width:34px;height:34px;border:1px solid #35516d;border-radius:6px;background:#0d2a47;color:#fff;cursor:pointer;font-size:18px; }
