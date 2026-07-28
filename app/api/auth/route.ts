@@ -116,7 +116,7 @@ export async function POST(request: Request) {
     if (!row) {
       await verifyPassword(
         password,
-        "pbkdf2$210000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "pbkdf2$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       );
       return Response.json({ error: BAD_CREDENTIALS }, { status: 401 });
     }
