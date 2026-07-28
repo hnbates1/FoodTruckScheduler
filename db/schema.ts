@@ -11,7 +11,7 @@ export const trucks = sqliteTable("trucks", {
   licenseExpiry: text("license_expiry").notNull(),
   preferredStart: text("preferred_start").notNull(),
   preferredEnd: text("preferred_end").notNull(),
-  reliability: integer("reliability").notNull().default(85),
+  reliability: integer("reliability").notNull().default(0),
   notes: text("notes").notNull().default(""),
   color: text("color").notNull().default("#1687ff"),
   availabilityJson: text("availability_json").notNull().default("[]"),
@@ -29,6 +29,8 @@ export const visits = sqliteTable("visits", {
   status: text("status").notNull().default("Tentative"),
   expectedDemand: text("expected_demand").notNull().default("Medium"),
   notes: text("notes").notNull().default(""),
+  outcome: text("outcome").notNull().default(""),
+  outcomeNotes: text("outcome_notes").notNull().default(""),
 });
 
 export const users = sqliteTable(

@@ -109,10 +109,12 @@ h1 { margin:0; font-size:29px; letter-spacing:-.7px; }
 .schedule-context-menu button:hover { background:#185183; }
 .schedule-context-menu .delete-shift-action { background:#441c27;color:#ffb4bc; }
 .schedule-context-menu .delete-shift-action:hover { background:#6b2533;color:#fff; }
-.visit-block small,.visit-block strong,.visit-block span { display:block; }
+.visit-block small,.visit-block strong { display:block; }
 .visit-block small { font-size:9px; color:#deedff; }
 .visit-block strong { margin:5px 0; font-size:13px; }
-.visit-block span { float:right; font-size:8px; padding:2px 6px; color:#e4ffb3; background:#46761c; border-radius:4px; }
+.outcome-action { float:right;padding:2px 6px;border:1px solid #689f36;border-radius:4px;background:#46761c;color:#e4ffb3;font-size:8px;cursor:pointer; }
+.outcome-action:hover { filter:brightness(1.15); }
+.outcome-action.recorded { border-color:#57a9e6;background:#145988;color:#e2f4ff; }
 .visit-block.conflict { border-color:var(--red); background-image:repeating-linear-gradient(135deg,#9f251f55 0 6px,#ff5d4b44 6px 10px)!important; }
 .legend { display:flex; gap:30px; padding:17px 10px; color:#8ea4bd; font-size:11px; }
 .legend i { display:inline-block; width:14px; height:14px; margin-right:7px; border-radius:3px; vertical-align:-3px; }
@@ -266,6 +268,11 @@ dd { margin:0; overflow-wrap:anywhere; }
 .form-grid .full { grid-column:1/-1; }
 .form-grid input,.form-grid select,.form-grid textarea { width:100%;padding:11px 12px;color:white;background:#061526;border:1px solid #315473;border-radius:6px; }
 .form-grid textarea { min-height:78px;resize:vertical; }
+.outcome-score-guide { display:flex;flex-wrap:wrap;gap:7px;padding:13px;border:1px solid #315473;border-radius:8px;background:#08192b; }
+.outcome-score-guide strong,.outcome-score-guide small { flex-basis:100%; }
+.outcome-score-guide strong { font-size:11px; }
+.outcome-score-guide span { padding:5px 7px;border-radius:6px;background:#12304e;color:#cbe7ff;font-size:9px; }
+.outcome-score-guide small { color:#91a7be;font-size:9px; }
 .truck-logo-upload { display:grid;grid-template-columns:92px 1fr;align-items:center;gap:15px;padding:15px;border:1px solid #315473;border-radius:8px;background:#08192b; }
 .logo-preview { width:92px;height:92px;display:grid;place-items:center;border:1px dashed #4f7596;border-radius:16px;background-color:#0d2b49;background-position:center;background-repeat:no-repeat;background-size:cover;color:#5b9bd5;font-size:28px; }
 .logo-preview.has-logo { border-style:solid;border-color:#5fa6de; }
@@ -301,6 +308,7 @@ dd { margin:0; overflow-wrap:anywhere; }
 .role-associate .section-heading>.primary,.role-associate .schedule-context-menu{display:none!important}
 
 .role-associate .visit-block{pointer-events:none}
+.role-associate .outcome-action{pointer-events:none}
 
 /* Mobile-first application shell */
 @media(max-width:760px){

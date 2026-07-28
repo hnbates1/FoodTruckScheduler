@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
+import { VISIT_OUTCOMES } from "./lib/reliability";
 
 type Truck = {
   id: number;
@@ -14,6 +15,7 @@ type Truck = {
   preferredStart: string;
   preferredEnd: string;
   reliability: number;
+  reliabilityEvents?: number;
   notes: string;
   color: string;
   availability: DayAvailability[];
@@ -39,6 +41,8 @@ type Visit = {
   status: string;
   expectedDemand: string;
   notes: string;
+  outcome: string;
+  outcomeNotes: string;
 };
 
 type AppData = { trucks: Truck[]; visits: Visit[]; storage?: "postgres" };
@@ -92,16 +96,16 @@ function standardAvailability(start = "11:00", end = "15:00"): DayAvailability[]
 
 const localSeed: AppData = {
   trucks: [
-    { id: 1, name: "Sample Burger Truck", cuisine: "Smashburgers & Fries", contact: "Sample Contact", phone: "(202) 555-0101", email: "burgers@example.com", insuranceExpiry: "2026-10-14", licenseExpiry: "2027-02-28", preferredStart: "11:00", preferredEnd: "15:00", reliability: 96, notes: "Demo record. Needs 20A electrical hookup.", color: "#1687ff", availability: standardAvailability(), paymentTypes: "Cash, Credit/Debit Cards" },
-    { id: 2, name: "Sample Taco Truck", cuisine: "Mexican", contact: "Sample Contact", phone: "(202) 555-0102", email: "tacos@example.com", insuranceExpiry: "2027-01-09", licenseExpiry: "2026-11-22", preferredStart: "12:00", preferredEnd: "16:00", reliability: 92, notes: "Demo record for scheduling.", color: "#7ac943", availability: standardAvailability("12:00", "16:00"), paymentTypes: "Cash, Credit/Debit Cards, Apple Pay" },
-    { id: 3, name: "Sample Dessert Truck", cuisine: "Desserts & Coffee", contact: "Sample Contact", phone: "(202) 555-0103", email: "desserts@example.com", insuranceExpiry: "2026-09-18", licenseExpiry: "2027-03-10", preferredStart: "15:00", preferredEnd: "19:00", reliability: 88, notes: "Demo record for scheduling.", color: "#9b6cff", availability: standardAvailability("15:00", "19:00").map((slot) => ({ ...slot, enabled: slot.day >= 3 && slot.day <= 6 })), paymentTypes: "Credit/Debit Cards, Apple Pay, Google Pay" },
-    { id: 4, name: "Sample Barbecue Truck", cuisine: "Barbecue", contact: "Sample Contact", phone: "(202) 555-0104", email: "barbecue@example.com", insuranceExpiry: "2026-08-21", licenseExpiry: "2026-12-12", preferredStart: "11:00", preferredEnd: "15:00", reliability: 94, notes: "Demo record; allow 30 minutes for setup.", color: "#ff9c42", availability: standardAvailability().map((slot) => ({ ...slot, enabled: [1, 4, 5, 6].includes(slot.day) })), paymentTypes: "Cash, Credit/Debit Cards" },
+    { id: 1, name: "Sample Burger Truck", cuisine: "Smashburgers & Fries", contact: "Sample Contact", phone: "(202) 555-0101", email: "burgers@example.com", insuranceExpiry: "2026-10-14", licenseExpiry: "2027-02-28", preferredStart: "11:00", preferredEnd: "15:00", reliability: 0, reliabilityEvents: 0, notes: "Demo record. Needs 20A electrical hookup.", color: "#1687ff", availability: standardAvailability(), paymentTypes: "Cash, Credit/Debit Cards" },
+    { id: 2, name: "Sample Taco Truck", cuisine: "Mexican", contact: "Sample Contact", phone: "(202) 555-0102", email: "tacos@example.com", insuranceExpiry: "2027-01-09", licenseExpiry: "2026-11-22", preferredStart: "12:00", preferredEnd: "16:00", reliability: 0, reliabilityEvents: 0, notes: "Demo record for scheduling.", color: "#7ac943", availability: standardAvailability("12:00", "16:00"), paymentTypes: "Cash, Credit/Debit Cards, Apple Pay" },
+    { id: 3, name: "Sample Dessert Truck", cuisine: "Desserts & Coffee", contact: "Sample Contact", phone: "(202) 555-0103", email: "desserts@example.com", insuranceExpiry: "2026-09-18", licenseExpiry: "2027-03-10", preferredStart: "15:00", preferredEnd: "19:00", reliability: 0, reliabilityEvents: 0, notes: "Demo record for scheduling.", color: "#9b6cff", availability: standardAvailability("15:00", "19:00").map((slot) => ({ ...slot, enabled: slot.day >= 3 && slot.day <= 6 })), paymentTypes: "Credit/Debit Cards, Apple Pay, Google Pay" },
+    { id: 4, name: "Sample Barbecue Truck", cuisine: "Barbecue", contact: "Sample Contact", phone: "(202) 555-0104", email: "barbecue@example.com", insuranceExpiry: "2026-08-21", licenseExpiry: "2026-12-12", preferredStart: "11:00", preferredEnd: "15:00", reliability: 0, reliabilityEvents: 0, notes: "Demo record; allow 30 minutes for setup.", color: "#ff9c42", availability: standardAvailability().map((slot) => ({ ...slot, enabled: [1, 4, 5, 6].includes(slot.day) })), paymentTypes: "Cash, Credit/Debit Cards" },
   ],
   visits: [
-    { id: 1, truckId: 1, visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", status: "Confirmed", expectedDemand: "High", notes: "" },
-    { id: 2, truckId: 2, visitDate: "2026-07-27", startTime: "12:00", endTime: "16:00", status: "Confirmed", expectedDemand: "High", notes: "" },
-    { id: 3, truckId: 3, visitDate: "2026-07-27", startTime: "15:00", endTime: "19:00", status: "Confirmed", expectedDemand: "Medium", notes: "" },
-    { id: 4, truckId: 4, visitDate: "2026-07-30", startTime: "11:00", endTime: "14:00", status: "Tentative", expectedDemand: "High", notes: "" },
+    { id: 1, truckId: 1, visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", status: "Confirmed", expectedDemand: "High", notes: "", outcome: "", outcomeNotes: "" },
+    { id: 2, truckId: 2, visitDate: "2026-07-27", startTime: "12:00", endTime: "16:00", status: "Confirmed", expectedDemand: "High", notes: "", outcome: "", outcomeNotes: "" },
+    { id: 3, truckId: 3, visitDate: "2026-07-27", startTime: "15:00", endTime: "19:00", status: "Confirmed", expectedDemand: "Medium", notes: "", outcome: "", outcomeNotes: "" },
+    { id: 4, truckId: 4, visitDate: "2026-07-30", startTime: "11:00", endTime: "14:00", status: "Tentative", expectedDemand: "High", notes: "", outcome: "", outcomeNotes: "" },
   ],
 };
 
@@ -260,6 +264,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [outcomeVisitId, setOutcomeVisitId] = useState<number | null>(null);
   const [visitDraft, setVisitDraft] = useState({ visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", truckId: 1 });
   const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "", operatingHours: weekDays.map(({ day }) => ({ day, enabled: day >= 1 && day <= 6, start: "06:00", end: "22:00" })), closedDates: [] });
 
@@ -330,6 +335,8 @@ export default function Home() {
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i - selectedDate.getDay() + 1)), [selectedDate]);
   const dayVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
   const selectedTruck = data.trucks.find((truck) => truck.id === selectedTruckId) ?? data.trucks[0];
+  const outcomeVisit = data.visits.find((visit) => visit.id === outcomeVisitId);
+  const outcomeTruck = data.trucks.find((truck) => truck.id === outcomeVisit?.truckId);
 
   const overlaps = useMemo(() => dayVisits.flatMap((a, index) =>
     dayVisits.slice(index + 1).filter((b) => {
@@ -383,6 +390,31 @@ export default function Home() {
     } catch {
       setData(previous);
       notify("That schedule change could not be saved");
+    }
+  }
+
+  async function submitVisitOutcome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!outcomeVisit) return;
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/data", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "visitOutcome",
+          id: outcomeVisit.id,
+          outcome: String(form.get("outcome") || ""),
+          outcomeNotes: String(form.get("outcomeNotes") || ""),
+        }),
+      });
+      if (!response.ok) throw new Error("Outcome update failed");
+      const next = await response.json() as AppData;
+      setData({ ...next, trucks: next.trucks.map(withAvailability) });
+      setOutcomeVisitId(null);
+      notify("Visit outcome saved and reliability recalculated");
+    } catch {
+      notify("That visit outcome could not be saved");
     }
   }
 
@@ -457,7 +489,7 @@ export default function Home() {
       setModal(null);
       notify("Visit added to the schedule");
     } catch {
-      const optimistic: Visit = { id: Date.now(), truckId: Number(payload.truckId), visitDate: String(payload.visitDate), startTime: String(payload.startTime), endTime: String(payload.endTime), status: String(payload.status), expectedDemand: String(payload.expectedDemand), notes: String(payload.notes ?? "") };
+      const optimistic: Visit = { id: Date.now(), truckId: Number(payload.truckId), visitDate: String(payload.visitDate), startTime: String(payload.startTime), endTime: String(payload.endTime), status: String(payload.status), expectedDemand: String(payload.expectedDemand), notes: String(payload.notes ?? ""), outcome: "", outcomeNotes: "" };
       setData((current) => ({ ...current, visits: [...current.visits, optimistic] }));
       setModal(null);
       notify("Visit saved for this session");
@@ -481,7 +513,7 @@ export default function Home() {
       setModal(null);
       notify("Truck profile created");
     } catch {
-      const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 85, notes: String(payload.notes ?? ""), color: "#1687ff", availability: payload.availability as DayAvailability[], hasLogo: Boolean(payload.logoData), logoData: String(payload.logoData || ""), logoVersion: String(Date.now()), paymentTypes: String(payload.paymentTypes || "") };
+      const optimistic: Truck = { id: Date.now(), name: String(payload.name), cuisine: String(payload.cuisine), contact: String(payload.contact), phone: String(payload.phone), email: String(payload.email), insuranceExpiry: String(payload.insuranceExpiry), licenseExpiry: String(payload.licenseExpiry), preferredStart: String(payload.preferredStart), preferredEnd: String(payload.preferredEnd), reliability: 0, reliabilityEvents: 0, notes: String(payload.notes ?? ""), color: "#1687ff", availability: payload.availability as DayAvailability[], hasLogo: Boolean(payload.logoData), logoData: String(payload.logoData || ""), logoVersion: String(Date.now()), paymentTypes: String(payload.paymentTypes || "") };
       setData((current) => ({ ...current, trucks: [...current.trucks, optimistic] }));
       setModal(null);
       notify("Truck profile saved on this device");
@@ -617,10 +649,10 @@ export default function Home() {
               <article><span className="metric-icon blue">▰</span><div><strong>{dayVisits.length}</strong><p>Trucks Today</p><small>{dayVisits.length ? "Scheduled" : "Open day"}</small></div></article>
               <article><span className="ring">{Math.min(100, dayVisits.length * 28)}%</span><div><p>Lunch Coverage</p><small>11 AM – 2 PM</small><em className="good">{dayVisits.length > 1 ? "Good" : "Needs a truck"}</em></div></article>
               <article><span className={`metric-icon ${overlaps.length ? "red" : "green"}`}>△</span><div><strong>{overlaps.length}</strong><p>Schedule Conflicts</p><small>{overlaps.length ? "Needs attention" : "All clear"}</small></div></article>
-              <article><span className="metric-icon blue">★</span><div><strong>{Math.round(data.trucks.reduce((sum, t) => sum + t.reliability, 0) / Math.max(1, data.trucks.length))}%</strong><p>Avg Reliability</p><small>Across active trucks</small></div></article>
+              <article><span className="metric-icon blue">★</span><div><strong>{Math.round(data.trucks.reduce((sum, t) => sum + t.reliability, 0) / Math.max(1, data.trucks.length))}%</strong><p>Avg Reliability</p><small>From recorded outcomes</small></div></article>
             </div>
 
-            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />
+            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />
             <div className="legend"><span><i className="blue-swatch" />Confirmed</span><span><i className="green-swatch" />Available</span><span><i className="stripe-swatch" />Conflict</span><span><i className="amber-swatch" />Documents expiring</span></div>
           </section>
           <aside className="right-rail">
@@ -630,13 +662,14 @@ export default function Home() {
         </div>
       )}
 
-      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} />}
+      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />}
       {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} />}
       {view === "insights" && <Insights data={data} />}
       {view === "location" && <LocationView location={location} onSave={(next) => { setLocation(next); window.localStorage.setItem("food-truck-admin-location", JSON.stringify(next)); void fetch("/api/location", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) }).then((response) => { if (!response.ok) throw new Error(); notify("Location profile updated"); }).catch(() => notify("Location saved locally, but could not be shared")); }} />}
 
       {modal === "visit" && <Modal title="Schedule a food truck" subtitle="Add a visit and check the calendar before confirming." onClose={() => setModal(null)}><VisitForm trucks={data.trucks} selectedTruckId={visitDraft.truckId} selectedDate={visitDraft.visitDate} startTime={visitDraft.startTime} endTime={visitDraft.endTime} onSubmit={submitVisit} /></Modal>}
       {modal === "truck" && <Modal title="Create truck profile" subtitle="Keep contact, compliance, and scheduling preferences together." onClose={() => setModal(null)}><TruckForm onSubmit={submitTruck} /></Modal>}
+      {outcomeVisit && outcomeTruck && ["admin", "manager"].includes(user.role) && <Modal title={`Record outcome for ${outcomeTruck.name}`} subtitle={`${new Date(`${outcomeVisit.visitDate}T12:00:00`).toLocaleDateString()} • ${formatTime(outcomeVisit.startTime)} – ${formatTime(outcomeVisit.endTime)}`} onClose={() => setOutcomeVisitId(null)}><OutcomeForm visit={outcomeVisit} onSubmit={submitVisitOutcome} /></Modal>}
       {pendingDeleteId !== null && <DeleteTruckModal truck={data.trucks.find((truck) => truck.id === pendingDeleteId)} visitCount={data.visits.filter((visit) => visit.truckId === pendingDeleteId).length} onCancel={() => setPendingDeleteId(null)} onConfirm={() => deleteTruck(pendingDeleteId)} />}
       {toast && <div className="toast">✓ {toast}</div>}
       {loading && <div className="sync-note">Syncing schedule…</div>}
@@ -659,7 +692,7 @@ type ScheduleContextMenu =
   | { kind: "visit"; x: number; y: number; visit: Visit; truck: Truck }
   | { kind: "open"; x: number; y: number; time: string; truckId?: number };
 
-function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; visitDate: string; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void }) {
+function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit, onRecordOutcome }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; visitDate: string; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void; onRecordOutcome: (visitId: number) => void }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [contextMenu, setContextMenu] = useState<ScheduleContextMenu | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -743,14 +776,14 @@ function ScheduleBoard({ visits, trucks, overlaps, visitDate, onSelect, onUpdate
         <button className="truck-label" onClick={() => onSelect(truck.id)}><TruckAvatar truck={truck} /><span><strong>{truck.name}</strong><small>{truck.cuisine}</small></span></button>
         <div className="timeline" onContextMenu={(event) => openTimelineMenu(event, truck.id)}>{showNow && <span className="now-cursor" style={{ left: `${nowLeft}%` }} aria-hidden="true"><i>NOW</i></span>}<div className={`visit-block ${conflict ? "conflict" : ""} ${active ? "dragging" : ""}`} style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(width, 5)}%`, background: `linear-gradient(110deg, ${truck.color}66, ${truck.color}bb)` }} role="button" tabIndex={0} onClick={() => onSelect(truck.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContextMenu({ kind: "visit", x: event.clientX, y: event.clientY, visit, truck }); }} onPointerDown={(event) => beginDrag(event, visit, "move")} onPointerMove={continueDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
           {visit.id > 0 && <button className="resize-handle start" aria-label={`Change ${truck.name} start time`} onPointerDown={(event) => beginDrag(event, visit, "start")} />}
-          <small>{formatTime(timeFromMinutes(start))} – {formatTime(timeFromMinutes(end))}</small><strong>{truck.name}</strong><span>{visit.status}</span>
+          <small>{formatTime(timeFromMinutes(start))} – {formatTime(timeFromMinutes(end))}</small><strong>{truck.name}</strong><button className={`outcome-action ${visit.outcome ? "recorded" : ""}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRecordOutcome(visit.id); }} aria-label={`Record outcome for ${truck.name}`}>{visit.outcome || visit.status}</button>
           {visit.id > 0 && <button className="resize-handle end" aria-label={`Change ${truck.name} end time`} onPointerDown={(event) => beginDrag(event, visit, "end")} />}
         </div></div>
       </div>;
     })}
     {contextMenu && <div className="context-menu-layer" onMouseDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}>
       <div className="schedule-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
-        {contextMenu.kind === "visit" ? <><small>{contextMenu.truck.name}</small><strong>{formatTime(contextMenu.visit.startTime)} – {formatTime(contextMenu.visit.endTime)}</strong><button className="delete-shift-action" onClick={() => { setContextMenu(null); onDeleteVisit(contextMenu.visit.id); }}>× Delete shift</button></> : <><small>OPEN TIME</small><strong>{formatTime(contextMenu.time)}</strong><button onClick={() => { setContextMenu(null); onAddVisit(visitDate, contextMenu.time, contextMenu.truckId); }}>＋ Add shift here</button></>}
+        {contextMenu.kind === "visit" ? <><small>{contextMenu.truck.name}</small><strong>{formatTime(contextMenu.visit.startTime)} – {formatTime(contextMenu.visit.endTime)}</strong><button onClick={() => { setContextMenu(null); onRecordOutcome(contextMenu.visit.id); }}>✓ Record outcome</button><button className="delete-shift-action" onClick={() => { setContextMenu(null); onDeleteVisit(contextMenu.visit.id); }}>× Delete shift</button></> : <><small>OPEN TIME</small><strong>{formatTime(contextMenu.time)}</strong><button onClick={() => { setContextMenu(null); onAddVisit(visitDate, contextMenu.time, contextMenu.truckId); }}>＋ Add shift here</button></>}
       </div>
     </div>}
   </div>;
@@ -760,8 +793,8 @@ function TruckProfile({ truck, onView }: { truck: Truck; onView: () => void }) {
   if (!truck) return null;
   return <article className="rail-card profile-card">
     <div className="card-title"><h2>Truck Profile</h2><span>⌃</span></div>
-    <div className="profile-head"><TruckAvatar truck={truck} large /><div><h3>{truck.name}</h3><p>{truck.cuisine}</p><strong className="rating">★ {(truck.reliability / 20).toFixed(1)}</strong></div></div>
-    <dl><div><dt>Contact</dt><dd>{truck.contact}</dd></div><div><dt>Phone</dt><dd>{truck.phone}</dd></div><div><dt>Email</dt><dd>{truck.email}</dd></div><div><dt>Payments</dt><dd>{truck.paymentTypes || "Not provided"}</dd></div><div><dt>Insurance</dt><dd>{expiryLabel(truck.insuranceExpiry)}</dd></div><div><dt>Preferred hours</dt><dd>{formatTime(truck.preferredStart)} – {formatTime(truck.preferredEnd)}</dd></div><div><dt>Reliability</dt><dd className="lime">{truck.reliability}%</dd></div></dl>
+    <div className="profile-head"><TruckAvatar truck={truck} large /><div><h3>{truck.name}</h3><p>{truck.cuisine}</p><strong className="rating">★ {truck.reliability}% reliability</strong></div></div>
+    <dl><div><dt>Contact</dt><dd>{truck.contact}</dd></div><div><dt>Phone</dt><dd>{truck.phone}</dd></div><div><dt>Email</dt><dd>{truck.email}</dd></div><div><dt>Payments</dt><dd>{truck.paymentTypes || "Not provided"}</dd></div><div><dt>Insurance</dt><dd>{expiryLabel(truck.insuranceExpiry)}</dd></div><div><dt>Preferred hours</dt><dd>{formatTime(truck.preferredStart)} – {formatTime(truck.preferredEnd)}</dd></div><div><dt>Reliability</dt><dd className="lime">{truck.reliability}% from {truck.reliabilityEvents ?? 0} scored {(truck.reliabilityEvents ?? 0) === 1 ? "visit" : "visits"}</dd></div></dl>
     <button className="secondary wide" onClick={onView}>View Full Profile</button>
   </article>;
 }
@@ -769,11 +802,11 @@ function TruckProfile({ truck, onView }: { truck: Truck; onView: () => void }) {
 function Assistant({ recommendation, selectedDate, onSchedule }: { recommendation?: { truck: Truck; compliant: boolean; distinct: boolean; score: number }; selectedDate: Date; onSchedule: (id: number) => void }) {
   return <article className="rail-card assistant">
     <div className="card-title"><h2>AI Schedule Assistant <em>BETA</em></h2><span>⌃</span></div>
-    <div className="ai-box">{recommendation ? <><p>✦ Best available fit for {selectedDate.toLocaleDateString("en-US", { weekday: "long" })}:</p><h3>{recommendation.truck.name}</h3><small>Based on weekly availability, schedule fit, compliance, cuisine variety, and reliability.</small><ul><li>✓ Available that day</li><li>✓ {recommendation.distinct ? "No cuisine overlap" : "Complements existing lineup"}</li><li>✓ {recommendation.truck.reliability}% reliability</li><li>✓ {recommendation.compliant ? "Documents current" : "Review documents first"}</li></ul><button className="primary wide" onClick={() => onSchedule(recommendation.truck.id)}>Schedule this truck →</button></> : <><h3>No available match</h3><p>Every available truck is already scheduled, or no truck is marked available that day.</p></>}</div>
+    <div className="ai-box">{recommendation ? <><p>✦ Best available fit for {selectedDate.toLocaleDateString("en-US", { weekday: "long" })}:</p><h3>{recommendation.truck.name}</h3><small>Based on weekly availability, schedule fit, compliance, cuisine variety, and reliability.</small><ul><li>✓ Available that day</li><li>✓ {recommendation.distinct ? "No cuisine overlap" : "Complements existing lineup"}</li><li>✓ {recommendation.truck.reliability}% reliability from {recommendation.truck.reliabilityEvents ?? 0} scored visits</li><li>✓ {recommendation.compliant ? "Documents current" : "Review documents first"}</li></ul><button className="primary wide" onClick={() => onSchedule(recommendation.truck.id)}>Schedule this truck →</button></> : <><h3>No available match</h3><p>Every available truck is already scheduled, or no truck is marked available that day.</p></>}</div>
   </article>;
 }
 
-function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void }) {
+function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit, onRecordOutcome }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void; onRecordOutcome: (visitId: number) => void }) {
   const [mode, setMode] = useState<"gantt" | "calendar">("gantt");
   const weekStart = addDays(selectedDate, -selectedDate.getDay() + 1);
   const days = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i));
@@ -799,7 +832,7 @@ function ScheduleView({ data, selectedDate, setSelectedDate, onSchedule, onSelec
     </div>
     <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(todayAtNoon())}>Today</button></div>
     <div className="week-strip schedule-week">{days.slice(0, 7).map((date) => <button key={dateKey(date)} className={dateKey(date) === dateKey(selectedDate) ? "selected" : ""} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></button>)}</div>
-    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={() => onSelect(truck.id)}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
+    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} onRecordOutcome={onRecordOutcome} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={(event) => { event.stopPropagation(); onRecordOutcome(visit.id); }}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)} • {visit.outcome || visit.status}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
   </section>;
 }
 
@@ -836,7 +869,7 @@ function TrucksView({ trucks, selectedId, setSelectedId, onAdd, onDelete, onLogo
       {selected && <article className="detail-card">
         <div className="profile-head"><TruckAvatar truck={selected} large /><div><h2>{selected.name}</h2><p>{selected.cuisine}</p></div></div>
         <TruckLogoEditor truck={selected} onChange={(file) => onLogoChange(selected.id, file)} />
-        <dl><div><dt>Primary contact</dt><dd>{selected.contact}</dd></div><div><dt>Phone</dt><dd>{selected.phone}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Accepted payments</dt><dd>{selected.paymentTypes || "Not provided"}</dd></div><div><dt>Insurance expiration</dt><dd>{selected.insuranceExpiry || "Not provided"}</dd></div><div><dt>Food license expiration</dt><dd>{selected.licenseExpiry || "Not provided"}</dd></div></dl>
+        <dl><div><dt>Primary contact</dt><dd>{selected.contact}</dd></div><div><dt>Phone</dt><dd>{selected.phone}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Accepted payments</dt><dd>{selected.paymentTypes || "Not provided"}</dd></div><div><dt>Insurance expiration</dt><dd>{selected.insuranceExpiry || "Not provided"}</dd></div><div><dt>Food license expiration</dt><dd>{selected.licenseExpiry || "Not provided"}</dd></div><div><dt>Reliability</dt><dd className="lime">{selected.reliability}% from {selected.reliabilityEvents ?? 0} scored {(selected.reliabilityEvents ?? 0) === 1 ? "visit" : "visits"}</dd></div></dl>
         <h4>Weekly availability</h4>
         <div className="availability-summary">{withAvailability(selected).availability.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Unavailable"}</span></div>)}</div>
         <h4>Operations notes</h4><p>{selected.notes || "No notes yet."}</p>
@@ -889,6 +922,29 @@ function Modal({ title, subtitle, onClose, children }: { title: string; subtitle
 function DeleteTruckModal({ truck, visitCount, onCancel, onConfirm }: { truck?: Truck; visitCount: number; onCancel: () => void; onConfirm: () => void }) {
   if (!truck) return null;
   return <div className="modal-backdrop"><section className="modal delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-truck-title"><p className="eyebrow">PERMANENT ACTION</p><h2 id="delete-truck-title">Delete {truck.name}?</h2><p>This will also remove {visitCount} scheduled {visitCount === 1 ? "visit" : "visits"} connected to this truck. This cannot be undone.</p><div className="modal-actions"><button className="secondary" onClick={onCancel}>Cancel</button><button className="danger-button solid" onClick={onConfirm}>Delete Truck</button></div></section></div>;
+}
+
+function OutcomeForm({ visit, onSubmit }: { visit: Visit; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  return <form onSubmit={onSubmit} className="form-grid">
+    <label className="full">Visit outcome
+      <select name="outcome" defaultValue={visit.outcome}>
+        <option value="">Not recorded</option>
+        {VISIT_OUTCOMES.map((outcome) => <option value={outcome.value} key={outcome.value}>{outcome.label}</option>)}
+      </select>
+    </label>
+    <div className="full outcome-score-guide">
+      <strong>How reliability is averaged</strong>
+      <span>On time: 100%</span>
+      <span>Late: 75%</span>
+      <span>No-show: 0%</span>
+      <span>Truck cancellation: 0%</span>
+      <small>Store and weather cancellations do not affect the average.</small>
+    </div>
+    <label className="full">Outcome notes <span className="optional-label">Optional</span>
+      <textarea name="outcomeNotes" defaultValue={visit.outcomeNotes} maxLength={2000} placeholder="Arrival details, cancellation reason, or follow-up needed…" />
+    </label>
+    <button className="primary full" type="submit">Save outcome and recalculate</button>
+  </form>;
 }
 
 function VisitForm({ trucks, selectedTruckId, selectedDate, startTime, endTime, onSubmit }: { trucks: Truck[]; selectedTruckId: number; selectedDate: string; startTime: string; endTime: string; onSubmit: (e: FormEvent<HTMLFormElement>) => void }) {

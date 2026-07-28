@@ -1,3 +1,10 @@
+import {
+  isCancellationOutcome,
+  isVisitOutcome,
+  reliabilityFromOutcomes,
+} from "../../lib/reliability";
+import { requireSession } from "../../lib/guard";
+
 type D1 = {
   prepare(query: string): {
     bind(...values: unknown[]): ReturnType<D1["prepare"]>;
@@ -46,6 +53,8 @@ type VisitInput = {
   status?: unknown;
   expectedDemand?: unknown;
   notes?: unknown;
+  outcome?: unknown;
+  outcomeNotes?: unknown;
 };
 
 type AppDataInput = {
@@ -57,6 +66,24 @@ type CalendarData = {
   trucks: Record<string, unknown>[];
   visits: Record<string, unknown>[];
 };
+
+function addReliability(
+  trucks: Record<string, unknown>[],
+  visits: Record<string, unknown>[],
+) {
+  return trucks.map((truck) => {
+    const stats = reliabilityFromOutcomes(
+      visits
+        .filter((visit) => number(visit.truckId) === number(truck.id))
+        .map((visit) => visit.outcome),
+    );
+    return {
+      ...truck,
+      reliability: stats.percentage,
+      reliabilityEvents: stats.count,
+    };
+  });
+}
 
 function text(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -126,7 +153,8 @@ function buildScheduleCalendar(data: CalendarData) {
   );
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   const events = data.visits
-    .filter((visit) => text(visit.status).toLowerCase() !== "cancelled")
+    .filter((visit) => text(visit.status).toLowerCase() !== "cancelled"
+      && !isCancellationOutcome(text(visit.outcome)))
     .sort((a, b) => `${text(a.visitDate)}${text(a.startTime)}`.localeCompare(`${text(b.visitDate)}${text(b.startTime)}`))
     .flatMap((visit) => {
       const truck = trucks.get(number(visit.truckId));
@@ -138,6 +166,8 @@ function buildScheduleCalendar(data: CalendarData) {
         `Cuisine: ${text(truck.cuisine, "Not provided")}`,
         `Status: ${status}`,
         `Expected demand: ${text(visit.expectedDemand, "Not provided")}`,
+        text(visit.outcome) ? `Outcome: ${text(visit.outcome)}` : "",
+        text(visit.outcomeNotes) ? `Outcome notes: ${text(visit.outcomeNotes)}` : "",
         `Contact: ${text(truck.contact, "Not provided")}`,
         `Phone: ${text(truck.phone, "Not provided")}`,
         `Email: ${text(truck.email, "Not provided")}`,
@@ -230,7 +260,7 @@ async function postgres() {
     license_expiry TEXT NOT NULL,
     preferred_start TEXT NOT NULL,
     preferred_end TEXT NOT NULL,
-    reliability INTEGER NOT NULL DEFAULT 85,
+    reliability INTEGER NOT NULL DEFAULT 0,
     notes TEXT NOT NULL DEFAULT '',
     color TEXT NOT NULL DEFAULT '#1687ff',
     availability_json TEXT NOT NULL DEFAULT '[]',
@@ -246,13 +276,17 @@ async function postgres() {
     end_time TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'Tentative',
     expected_demand TEXT NOT NULL DEFAULT 'Medium',
-    notes TEXT NOT NULL DEFAULT ''
+    notes TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL DEFAULT '',
+    outcome_notes TEXT NOT NULL DEFAULT ''
   )`);
   await pool.query("CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name)");
   await pool.query("CREATE INDEX IF NOT EXISTS visits_date_idx ON visits(visit_date)");
   await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_data TEXT NOT NULL DEFAULT ''");
   await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS logo_updated_at TEXT NOT NULL DEFAULT ''");
-  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS payment_types TEXT NOT NULL DEFAULT '')");
+  await pool.query("ALTER TABLE trucks ADD COLUMN IF NOT EXISTS payment_types TEXT NOT NULL DEFAULT ''");
+  await pool.query("ALTER TABLE visits ADD COLUMN IF NOT EXISTS outcome TEXT NOT NULL DEFAULT ''");
+  await pool.query("ALTER TABLE visits ADD COLUMN IF NOT EXISTS outcome_notes TEXT NOT NULL DEFAULT ''");
   return pool;
 }
 
@@ -266,7 +300,8 @@ async function readAllPostgres(pool: import("pg").Pool | import("pg").PoolClient
       FROM trucks ORDER BY name`),
     pool.query(`SELECT id,truck_id AS "truckId",visit_date AS "visitDate",
       start_time AS "startTime",end_time AS "endTime",status,
-      expected_demand AS "expectedDemand",notes
+      expected_demand AS "expectedDemand",notes,outcome,
+      outcome_notes AS "outcomeNotes"
       FROM visits ORDER BY visit_date,start_time`),
   ]);
   const trucks = trucksResult.rows.map((truck) => {
@@ -281,7 +316,11 @@ async function readAllPostgres(pool: import("pg").Pool | import("pg").PoolClient
     );
     return { ...rest, availability };
   });
-  return { trucks, visits: visitsResult.rows, storage: "postgres" };
+  return {
+    trucks: addReliability(trucks, visitsResult.rows),
+    visits: visitsResult.rows,
+    storage: "postgres",
+  };
 }
 
 async function savePostgres(payload: Record<string, unknown>) {
@@ -295,7 +334,7 @@ async function savePostgres(payload: Record<string, unknown>) {
       [
         text(payload.name), text(payload.cuisine), text(payload.contact), text(payload.phone),
         text(payload.email), text(payload.insuranceExpiry), text(payload.licenseExpiry),
-        text(payload.preferredStart), text(payload.preferredEnd), 85, text(payload.notes),
+        text(payload.preferredStart), text(payload.preferredEnd), 0, text(payload.notes),
         "#1687ff", JSON.stringify(payload.availability ?? []), logo?.dataUrl ?? "",
         logo ? String(Date.now()) : "", text(payload.paymentTypes),
       ],
@@ -338,7 +377,7 @@ async function importPostgres(pool: import("pg").Pool, data: AppDataInput = {}) 
         [
           text(truck.name), text(truck.cuisine), text(truck.contact), text(truck.phone),
           text(truck.email), text(truck.insuranceExpiry), text(truck.licenseExpiry),
-          text(truck.preferredStart), text(truck.preferredEnd), number(truck.reliability, 85),
+          text(truck.preferredStart), text(truck.preferredEnd), number(truck.reliability, 0),
           text(truck.notes), text(truck.color, "#1687ff"),
           JSON.stringify(truck.availability ?? []), logo?.dataUrl ?? "",
           logo ? String(Date.now()) : "", text(truck.paymentTypes),
@@ -380,7 +419,7 @@ const truckSql = `CREATE TABLE IF NOT EXISTS trucks (
   license_expiry TEXT NOT NULL,
   preferred_start TEXT NOT NULL,
   preferred_end TEXT NOT NULL,
-  reliability INTEGER NOT NULL DEFAULT 85,
+  reliability INTEGER NOT NULL DEFAULT 0,
   notes TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT '#1687ff',
   availability_json TEXT NOT NULL DEFAULT '[]',
@@ -397,7 +436,9 @@ const visitSql = `CREATE TABLE IF NOT EXISTS visits (
   end_time TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'Tentative',
   expected_demand TEXT NOT NULL DEFAULT 'Medium',
-  notes TEXT NOT NULL DEFAULT ''
+  notes TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL DEFAULT '',
+  outcome_notes TEXT NOT NULL DEFAULT ''
 )`;
 
 const truckIndexSql = "CREATE INDEX IF NOT EXISTS trucks_name_idx ON trucks(name)";
@@ -421,6 +462,13 @@ async function database() {
   }
   if (!columns.results.some((column) => column.name === "payment_types")) {
     await db.prepare("ALTER TABLE trucks ADD COLUMN payment_types TEXT NOT NULL DEFAULT ''").run();
+  }
+  const visitColumns = await db.prepare("PRAGMA table_info(visits)").all<{ name: string }>();
+  if (!visitColumns.results.some((column) => column.name === "outcome")) {
+    await db.prepare("ALTER TABLE visits ADD COLUMN outcome TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!visitColumns.results.some((column) => column.name === "outcome_notes")) {
+    await db.prepare("ALTER TABLE visits ADD COLUMN outcome_notes TEXT NOT NULL DEFAULT ''").run();
   }
   const count = await db.prepare("SELECT COUNT(*) AS count FROM trucks").all<{ count: number }>();
   if (!count.results[0]?.count) {
@@ -447,7 +495,7 @@ async function objectStorage() {
 
 async function readAll(db: D1) {
   const trucksResult = await db.prepare("SELECT id,name,cuisine,contact,phone,email,insurance_expiry AS insuranceExpiry,license_expiry AS licenseExpiry,preferred_start AS preferredStart,preferred_end AS preferredEnd,reliability,notes,color,payment_types AS paymentTypes,availability_json AS availabilityJson,(logo_key <> '') AS hasLogo,logo_updated_at AS logoVersion FROM trucks ORDER BY name").all<Record<string, unknown>>();
-  const visits = await db.prepare("SELECT id,truck_id AS truckId,visit_date AS visitDate,start_time AS startTime,end_time AS endTime,status,expected_demand AS expectedDemand,notes FROM visits ORDER BY visit_date,start_time").all();
+  const visits = await db.prepare("SELECT id,truck_id AS truckId,visit_date AS visitDate,start_time AS startTime,end_time AS endTime,status,expected_demand AS expectedDemand,notes,outcome,outcome_notes AS outcomeNotes FROM visits ORDER BY visit_date,start_time").all<Record<string, unknown>>();
   const trucks = trucksResult.results.map((truck) => {
     let availability: unknown[] = [];
     try {
@@ -460,7 +508,10 @@ async function readAll(db: D1) {
     );
     return { ...rest, hasLogo: Boolean(truck.hasLogo), availability };
   });
-  return { trucks, visits: visits.results };
+  return {
+    trucks: addReliability(trucks, visits.results),
+    visits: visits.results,
+  };
 }
 
 async function serveLogo(logoId: number) {
@@ -540,7 +591,7 @@ export async function POST(request: Request) {
     const db = await database();
     if (payload.kind === "truck") {
       const result = await db.prepare("INSERT INTO trucks (name,cuisine,contact,phone,email,insurance_expiry,license_expiry,preferred_start,preferred_end,reliability,notes,color,availability_json,payment_types) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
-        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry ?? "",payload.licenseExpiry ?? "",payload.preferredStart,payload.preferredEnd,85,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? []),text(payload.paymentTypes)).all<{ id: number }>();
+        .bind(payload.name,payload.cuisine,payload.contact,payload.phone,payload.email,payload.insuranceExpiry ?? "",payload.licenseExpiry ?? "",payload.preferredStart,payload.preferredEnd,0,payload.notes ?? "","#1687ff",JSON.stringify(payload.availability ?? []),text(payload.paymentTypes)).all<{ id: number }>();
       const logo = decodeLogo(payload.logoData);
       const id = result.results[0]?.id;
       if (logo && id) {
@@ -599,6 +650,25 @@ export async function PATCH(request: Request) {
         await db.prepare("UPDATE trucks SET logo_key = '', logo_updated_at = '' WHERE id = ?")
           .bind(id).run();
       }
+      return Response.json(await readAll(db));
+    }
+    if (payload.kind === "visitOutcome") {
+      const outcome = text(payload.outcome);
+      const outcomeNotes = text(payload.outcomeNotes).slice(0, 2000);
+      if (!Number.isInteger(id) || id <= 0 || (outcome && !isVisitOutcome(outcome))) {
+        return Response.json({ error: "Choose a valid visit outcome." }, { status: 400 });
+      }
+      if (postgresUrl()) {
+        const pool = await postgres();
+        await pool.query(
+          "UPDATE visits SET outcome = $1, outcome_notes = $2 WHERE id = $3",
+          [outcome, outcomeNotes, id],
+        );
+        return Response.json(await readAllPostgres(pool));
+      }
+      const db = await database();
+      await db.prepare("UPDATE visits SET outcome = ?, outcome_notes = ? WHERE id = ?")
+        .bind(outcome, outcomeNotes, id).run();
       return Response.json(await readAll(db));
     }
     const startTime = text(payload.startTime);
@@ -663,4 +733,3 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Unable to delete this truck." }, { status: 500 });
   }
 }
-import { requireSession } from "../../lib/guard";
