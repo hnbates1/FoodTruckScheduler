@@ -17,6 +17,7 @@ export const trucks = sqliteTable("trucks", {
   availabilityJson: text("availability_json").notNull().default("[]"),
   logoKey: text("logo_key").notNull().default(""),
   logoUpdatedAt: text("logo_updated_at").notNull().default(""),
+  paymentTypes: text("payment_types").notNull().default(""),
 });
 
 export const visits = sqliteTable("visits", {
@@ -58,3 +59,9 @@ export const sessions = sqliteTable(
   },
   (table) => [index("sessions_user_idx").on(table.userId)],
 );
+
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull().default(""),
+  updatedAt: text("updated_at").notNull(),
+});
