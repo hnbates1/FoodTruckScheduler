@@ -60,7 +60,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "bootstrap") {
-      const { env } = await import("cloudflare:workers");\n      const configuredToken = (env as unknown as { SETUP_TOKEN?: string }).SETUP_TOKEN?.trim();
+      const { env } = await import("cloudflare:workers");
+      const configuredToken = (env as unknown as { SETUP_TOKEN?: string }).SETUP_TOKEN?.trim();
       if (!configuredToken || text(payload.setupToken) !== configuredToken) {
         return Response.json({ error: "Not available." }, { status: 404 });
       }
