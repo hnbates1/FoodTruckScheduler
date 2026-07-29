@@ -98,12 +98,29 @@ function confidenceLabel(value: number) {
   return "Low";
 }
 
+// analysis-runtime-diagnostics-v1
 async function errorMessage(response: Response, fallback: string) {
+  const contentType = response.headers.get("content-type") || "unknown content type";
+  const copy = response.clone();
   try {
-    const value = await response.json() as { error?: string };
-    return value.error || fallback;
+    const value = await response.json() as { error?: string; diagnostic?: string };
+    const message = value.error || fallback;
+    const diagnostic = value.diagnostic ? ` [${value.diagnostic}]` : "";
+    return `${message}${diagnostic} (HTTP ${response.status})`;
   } catch {
-    return fallback;
+    const raw = await copy.text().catch(() => "");
+    const excerpt = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 240);
+    return `${fallback} (HTTP ${response.status}; ${contentType})${excerpt ? `: ${excerpt}` : ""}`;
+  }
+}
+
+async function analyzerStatus() {
+  try {
+    const response = await fetch("/api/intake-analysis", { cache: "no-store" });
+    const value = await response.json() as { routeVersion?: string; openAiConfigured?: boolean; workersAiConfigured?: boolean };
+    return ` Analyzer status: route ${value.routeVersion || "unknown"}; OpenAI key ${value.openAiConfigured ? "detected" : "NOT detected"}; Workers AI ${value.workersAiConfigured ? "connected" : "not connected"}.`;
+  } catch {
+    return " Analyzer status could not be loaded.";
   }
 }
 
@@ -300,7 +317,10 @@ export default function ExistingTruckDocumentsRuntime() {
         body.append("files", new File([blob], document.fileName, { type: document.contentType || blob.type || "application/octet-stream" }));
       }
       const response = await fetch("/api/intake-analysis", { method: "POST", body });
-      if (!response.ok) throw new Error(await errorMessage(response, "The stored documents could not be analyzed."));
+      if (!response.ok) {
+        const detail = await errorMessage(response, "The stored documents could not be analyzed.");
+        throw new Error(detail + await analyzerStatus());
+      }
       const result = await response.json() as IntakeAnalysis;
       setAnalysis(result);
       const suggestedRows = reviewRows(truck, result);

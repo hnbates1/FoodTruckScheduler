@@ -442,6 +442,19 @@ async function analyzeWithWorkers(ai: AiBinding, files: File[]) {
   };
 }
 
+// analysis-runtime-status-v1
+export async function GET(request: Request) {
+  const session = await requireSession(request);
+  if ("response" in session) return session.response;
+  const { env } = await import("cloudflare:workers");
+  const bindings = env as unknown as RuntimeBindings;
+  return json({
+    routeVersion: "openai-files-api-v2",
+    openAiConfigured: Boolean(String(bindings.OPENAI_API_KEY || "").trim()),
+    workersAiConfigured: Boolean(bindings.AI),
+  });
+}
+
 export async function POST(request: Request) {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
