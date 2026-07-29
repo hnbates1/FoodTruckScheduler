@@ -31,10 +31,10 @@ export default function PublicSchedule() {
 
   return <main className="public-schedule">
     <header><p className="eyebrow">FOOD TRUCK ADMIN</p><h1>Upcoming Food Trucks</h1><p>Current scheduled visits. Check back here for the latest lineup.</p></header>
-    {error && <section className="public-error"><h2>Schedule unavailable</h2><p>{error}</p></section>}
+    {error && <section className="public-error"><h2>Schedule Unavailable</h2><p>{error}</p></section>}
     {!data && !error && <p>Loading schedule…</p>}
-    {data && !groups.length && <section className="public-error"><h2>No upcoming visits</h2><p>The next lineup has not been posted yet.</p></section>}
-    <div className="public-days">{groups.map((group) => <section className="public-day" key={group.date}><h2>{new Date(group.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</h2>{group.visits.map((visit) => <article key={visit.id} style={{ borderLeftColor: visit.truck?.color || "#1687ff" }}><div><h3>{visit.truck?.name || "Food truck"}</h3><p>{visit.truck?.cuisine || "Menu details coming soon"}</p>{visit.truck?.paymentTypes && <small>Accepts: {visit.truck.paymentTypes}</small>}</div><strong>{time(visit.startTime)} – {time(visit.endTime)}</strong></article>)}</section>)}</div>
+    {data && !groups.length && <section className="public-error"><h2>No Upcoming Visits</h2><p>The next lineup has not been posted yet.</p></section>}
+    <div className="public-days">{groups.map((group) => <section className="public-day" key={group.date}><h2>{new Date(group.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</h2>{group.visits.map((visit) => <article key={visit.id} style={{ borderLeftColor: visit.truck?.color || "#1687ff" }}><div><h3>{visit.truck?.name || "Food Truck"}</h3><p>{visit.truck?.cuisine || "Menu details coming soon"}</p>{visit.truck?.paymentTypes && <small>Accepts: {visit.truck.paymentTypes}</small>}</div><strong>{time(visit.startTime)} – {time(visit.endTime)}</strong></article>)}</section>)}</div>
     <footer>Schedule subject to change.</footer>
   </main>;
 }
