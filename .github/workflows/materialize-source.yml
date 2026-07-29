@@ -6,6 +6,7 @@ on:
     paths:
       - "scripts/apply-location-schedule-settings.mjs"
       - "scripts/apply-export-and-grid-fixes.mjs"
+      - "scripts/add-stored-document-analysis.mjs"
       - "app/ScheduleExportRuntime.tsx"
       - "package.json"
       - ".github/workflows/materialize-source.yml"
@@ -36,6 +37,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/page.tsx app/globals.css app/ScheduleExportRuntime.tsx
-          git commit -m "Materialize location schedule and export source"
+          git add app/page.tsx app/globals.css app/ScheduleExportRuntime.tsx app/ExistingTruckDocumentsRuntime.tsx
+          git commit -m "Materialize generated application source"
           git push
