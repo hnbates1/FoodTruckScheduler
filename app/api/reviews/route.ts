@@ -1,6 +1,7 @@
 import {
   googlePlaceProfile,
   googlePlacesSearchQuery,
+  hasCompleteGooglePlacesLocation,
   isGooglePlaceId,
   type GooglePlaceProfile,
 } from "../../lib/google-places";
@@ -87,6 +88,7 @@ async function locationProfile(db: D1) {
   ).all<{ value: string }>();
   try {
     return JSON.parse(result.results[0]?.value || "{}") as {
+      street?: unknown;
       city?: unknown;
       state?: unknown;
       zip?: unknown;
@@ -232,6 +234,11 @@ export async function POST(request: Request) {
 
     if (action === "search") {
       const location = await locationProfile(runtimeValue.db);
+      if (!hasCompleteGooglePlacesLocation(location)) {
+        return json({
+          error: "Add the store street address, city, state, and ZIP on the Location page before searching Google.",
+        }, 400);
+      }
       const textQuery = googlePlacesSearchQuery(truckRecord.name, location);
       const raw = await googleFetch(
         runtimeValue,

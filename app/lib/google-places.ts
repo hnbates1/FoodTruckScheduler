@@ -32,6 +32,13 @@ type GooglePlacePayload = {
   };
 };
 
+type GooglePlacesLocation = {
+  street?: unknown;
+  city?: unknown;
+  state?: unknown;
+  zip?: unknown;
+};
+
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -82,13 +89,30 @@ export function googlePlaceProfile(value: unknown): GooglePlaceProfile | null {
 
 export function googlePlacesSearchQuery(
   truckName: unknown,
-  location: { city?: unknown; state?: unknown; zip?: unknown },
+  location: GooglePlacesLocation,
 ) {
-  const name = stringValue(truckName);
-  const area = [
+  const name = stringValue(truckName).slice(0, 80);
+  const locality = [
     stringValue(location.city),
     stringValue(location.state),
     stringValue(location.zip),
   ].filter(Boolean).join(" ");
-  return [name, "food truck", area].filter(Boolean).join(" ").slice(0, 240);
+  const address = [
+    stringValue(location.street),
+    locality,
+  ].filter(Boolean).join(", ").slice(0, 140);
+  return [
+    name,
+    "food truck",
+    address ? `near ${address}` : "",
+  ].filter(Boolean).join(" ").slice(0, 240);
+}
+
+export function hasCompleteGooglePlacesLocation(location: GooglePlacesLocation) {
+  return [
+    location.street,
+    location.city,
+    location.state,
+    location.zip,
+  ].every((value) => Boolean(stringValue(value)));
 }

@@ -4,18 +4,51 @@ import test from "node:test";
 import {
   googlePlaceProfile,
   googlePlacesSearchQuery,
+  hasCompleteGooglePlacesLocation,
   isGooglePlaceId,
 } from "../app/lib/google-places.ts";
 
 test("builds a bounded food-truck search near the store", () => {
   assert.equal(
     googlePlacesSearchQuery("Taco Trail", {
+      street: "940 Niles Cortland Rd SE",
       city: "Niles",
       state: "OH",
       zip: "44446",
     }),
-    "Taco Trail food truck Niles OH 44446",
+    "Taco Trail food truck near 940 Niles Cortland Rd SE, Niles OH 44446",
   );
+});
+
+test("requires a complete store address before searching Google", () => {
+  assert.equal(
+    hasCompleteGooglePlacesLocation({
+      street: "940 Niles Cortland Rd SE",
+      city: "Niles",
+      state: "OH",
+      zip: "44446",
+    }),
+    true,
+  );
+  assert.equal(
+    hasCompleteGooglePlacesLocation({
+      city: "Niles",
+      state: "OH",
+      zip: "44446",
+    }),
+    false,
+  );
+});
+
+test("keeps Google search queries within the API limit", () => {
+  const query = googlePlacesSearchQuery("T".repeat(400), {
+    street: "S".repeat(400),
+    city: "Niles",
+    state: "OH",
+    zip: "44446",
+  });
+  assert.ok(query.length <= 240);
+  assert.match(query, /food truck near/);
 });
 
 test("normalizes Google ratings and review-summary disclosure", () => {
