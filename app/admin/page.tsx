@@ -69,25 +69,25 @@ export default function AdminPage() {
   }
 
   if (!me) return <main className="admin-shell"><p>Loading…</p></main>;
-  if (me.role !== "admin") return <main className="admin-shell"><section className="admin-card"><h1>Administrator access required</h1><a className="secondary" href="/">Return to Food Truck Admin</a></section></main>;
+  if (me.role !== "admin") return <main className="admin-shell"><section className="admin-card"><h1>Administrator Access Required</h1><a className="secondary" href="/">Return to Food Truck Admin</a></section></main>;
 
   return <main className="admin-shell">
-    <header className="admin-header"><div><p className="eyebrow">FOOD TRUCK ADMIN</p><h1>People & Access</h1><p>Add coworkers, set permissions, and control the public truck schedule.</p></div><a className="secondary" href="/">← Back to dashboard</a></header>
+    <header className="admin-header"><div><p className="eyebrow">FOOD TRUCK ADMIN</p><h1>People & Access</h1><p>Add coworkers, set permissions, and control the public truck schedule.</p></div><a className="secondary" href="/">← Back to Dashboard</a></header>
     {message && <div className="admin-message" role="status">{message}</div>}
     <section className="admin-grid">
       <article className="admin-card">
-        <h2>Add a coworker</h2><p>Give them a temporary password. They can use it to sign in immediately.</p>
+        <h2>Add a Coworker</h2><p>Give them a temporary password. They can use it to sign in immediately.</p>
         <form className="form-grid" onSubmit={addUser}>
           <label>Name<input name="name" required /></label>
           <label>Email<input name="email" type="email" required /></label>
           <label>Temporary password<input name="password" type="password" minLength={12} required /></label>
           <label>Access level<select name="role" defaultValue="associate"><option value="associate">Associate — view only</option><option value="manager">Manager — edit schedules and trucks</option></select></label>
-          <button className="primary full" disabled={busy}>Create account</button>
+          <button className="primary full" disabled={busy}>Create Account</button>
         </form>
       </article>
       <article className="admin-card">
-        <h2>Public schedule link</h2><p>Anyone with this private link can view the schedule without signing in. It contains no contacts, compliance dates, or internal notes.</p>
-        {share.enabled ? <><label className="share-field">Active link<input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label><div className="admin-actions"><button className="primary" onClick={() => navigator.clipboard.writeText(share.url)}>Copy link</button><button className="secondary" disabled={busy} onClick={rotateLink}>Rotate link</button><button className="danger-button" onClick={disableLink}>Disable</button></div></> : <button className="primary" disabled={busy} onClick={rotateLink}>Create public schedule link</button>}
+        <h2>Public Schedule Link</h2><p>Anyone with this private link can view the schedule without signing in. It contains no contacts, compliance dates, or internal notes.</p>
+        {share.enabled ? <><label className="share-field">Active link<input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label><div className="admin-actions"><button className="primary" onClick={() => navigator.clipboard.writeText(share.url)}>Copy Link</button><button className="secondary" disabled={busy} onClick={rotateLink}>Rotate Link</button><button className="danger-button" onClick={disableLink}>Disable</button></div></> : <button className="primary" disabled={busy} onClick={rotateLink}>Create Public Schedule Link</button>}
       </article>
     </section>
     <section className="admin-card user-list"><h2>Accounts</h2><div className="permission-key"><span><strong>Admin</strong> Full access and account management</span><span><strong>Manager</strong> Edit schedules, trucks, and location</span><span><strong>Associate</strong> View only</span></div>
