@@ -69,6 +69,17 @@ jobs:
             echo "GOOGLE_PLACES_API_KEY is not configured; online ratings will remain disabled."
           fi
 
+      - name: Configure OUTSCRAPER_API_KEY
+        shell: bash
+        env:
+          OUTSCRAPER_API_KEY: ${{ secrets.OUTSCRAPER_API_KEY }}
+        run: |
+          if [ -n "$OUTSCRAPER_API_KEY" ]; then
+            printf '%s' "$OUTSCRAPER_API_KEY" | npx wrangler secret put OUTSCRAPER_API_KEY
+          else
+            echo "OUTSCRAPER_API_KEY is not configured; typical location traffic will remain disabled."
+          fi
+
       - name: Deploy Worker
         id: deploy
         shell: bash
@@ -115,3 +126,4 @@ jobs:
           echo "- URL: ${{ steps.deploy.outputs.worker_url }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Custom domain: https://foodtruckadmin.com" >> "$GITHUB_STEP_SUMMARY"
           echo "- Google Places: optional; enabled when GOOGLE_PLACES_API_KEY is configured" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Typical traffic: optional; enabled when OUTSCRAPER_API_KEY is configured" >> "$GITHUB_STEP_SUMMARY"

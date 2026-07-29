@@ -86,3 +86,30 @@ export const googlePlacesDailyUsage = sqliteTable("google_places_daily_usage", {
   usageDate: text("usage_date").primaryKey(),
   requestCount: integer("request_count").notNull().default(0),
 });
+
+export const locationTrafficSnapshots = sqliteTable(
+  "location_traffic_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    locationKey: text("location_key").notNull(),
+    weekStart: text("week_start").notNull(),
+    status: text("status").notNull().default("pending"),
+    curveJson: text("curve_json").notNull().default(""),
+    venueName: text("venue_name").notNull().default(""),
+    venueAddress: text("venue_address").notNull().default(""),
+    placeId: text("place_id").notNull().default(""),
+    fetchedAt: text("fetched_at").notNull(),
+    errorCode: text("error_code").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("location_traffic_location_week_idx").on(
+      table.locationKey,
+      table.weekStart,
+    ),
+    index("location_traffic_lookup_idx").on(
+      table.locationKey,
+      table.status,
+      table.weekStart,
+    ),
+  ],
+);
