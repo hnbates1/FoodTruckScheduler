@@ -5,6 +5,7 @@ import DocumentIntakeRuntime from "./DocumentIntakeRuntime";
 import ExistingTruckDocumentsRuntime from "./ExistingTruckDocumentsRuntime";
 import TruckCommentsRuntime from "./TruckCommentsRuntime";
 import UiCopyRuntime from "./UiCopyRuntime";
+import VisitAvailabilityRuntime from "./VisitAvailabilityRuntime";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -44,6 +45,7 @@ export default function RootLayout({
           <DocumentIntakeRuntime />
           <ExistingTruckDocumentsRuntime />
           <TruckCommentsRuntime />
+          <VisitAvailabilityRuntime />
           <UiCopyRuntime />
         </AppRuntime>
       </body>
