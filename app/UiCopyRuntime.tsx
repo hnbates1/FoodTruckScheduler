@@ -66,7 +66,6 @@ const COPY_REPLACEMENTS = new Map<string, string>([
   // Public schedule and legal pages.
   ["Schedule unavailable", "Schedule Unavailable"],
   ["No upcoming visits", "No Upcoming Visits"],
-  ["Food truck", "Food Truck"],
   ["Terms of use", "Terms of Use"],
   ["Online ratings", "Online Ratings"],
   ["Google business information", "Google Business Information"],
