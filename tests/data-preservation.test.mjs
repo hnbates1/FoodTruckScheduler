@@ -31,6 +31,10 @@ function destructiveTruckSql(source) {
   ].some((statement) => normalized.includes(statement));
 }
 
+function deletesTruckDocuments(source) {
+  return source.replace(/\s+/g, " ").toLowerCase().includes("delete from truck_documents");
+}
+
 test("production storage bindings stay attached to the existing data", async () => {
   const wrangler = await readFile(path.join(ROOT, "wrangler.jsonc"), "utf8");
   assert.match(wrangler, new RegExp(`\"database_id\"\\s*:\\s*\"${PROTECTED_DATABASE_ID}\"`));
@@ -60,4 +64,36 @@ test("destructive truck SQL exists only in the explicit admin delete endpoint", 
   const route = await readFile(path.join(ROOT, explicitDeleteRoute), "utf8");
   assert.match(route, /session\.user\.role\s*!==\s*\"admin\"/);
   assert.match(route, /DELETE FROM trucks WHERE id/);
+});
+
+test("stored truck documents can only be deleted through their explicit endpoint", async () => {
+  const protectedRoots = ["app", "drizzle", "worker"];
+  const files = (await Promise.all(protectedRoots.map(sourceFiles))).flat();
+  const explicitDocumentRoute = path.normalize("app/api/truck-documents/route.ts");
+  const violations = [];
+
+  for (const file of files) {
+    if (path.normalize(file) === explicitDocumentRoute) continue;
+    const source = await readFile(path.join(ROOT, file), "utf8");
+    if (deletesTruckDocuments(source)) violations.push(file);
+  }
+
+  assert.deepEqual(violations, []);
+  const route = await readFile(path.join(ROOT, explicitDocumentRoute), "utf8");
+  assert.match(route, /editorRole\(session\.user\.role\)/);
+  assert.match(route, /DELETE FROM truck_documents WHERE id = \?/);
+
+  const controls = await readFile(path.join(ROOT, "app", "ExistingTruckDocumentsRuntime.tsx"), "utf8");
+  assert.match(controls, /window\.confirm\(`Delete \$\{document\.fileName\}\?/);
+});
+
+test("AI suggestions require explicit field selection and confirmation", async () => {
+  const controls = await readFile(path.join(ROOT, "app", "ExistingTruckDocumentsRuntime.tsx"), "utf8");
+  assert.match(controls, /selectedFields\.has\(row\.field\)/);
+  assert.match(controls, /window\.confirm\(`Apply \$\{selectedRows\.length\} reviewed/);
+  assert.match(controls, /Apply Selected Updates/);
+
+  const updateRoute = await readFile(path.join(ROOT, "app", "api", "truck-update", "route.ts"), "utf8");
+  assert.match(updateRoute, /Choose at least one field to update/);
+  assert.match(updateRoute, /Object\.keys\(FIELD_COLUMNS\)/);
 });
