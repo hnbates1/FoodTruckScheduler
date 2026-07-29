@@ -3,7 +3,8 @@ import { requireSession } from "../../lib/guard";
 export const dynamic = "force-dynamic";
 
 const WORKERS_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+// openai-document-analysis-compat-v1
 const MAX_FILES = 6;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
@@ -494,10 +495,11 @@ export async function POST(request: Request) {
       error: "Document analysis is not configured. Add OPENAI_API_KEY or connect Workers AI.",
     }, 503);
   } catch (error) {
-    if (error instanceof PublicError) return json({ error: error.message }, error.status);
+    if (error instanceof PublicError) return json({ error: error.message, diagnostic: "DOCUMENT_ANALYSIS_PROVIDER_ERROR" }, error.status);
     console.error("document intake analysis failed", error);
     return json({
-      error: "The documents could not be analyzed. Try a clearer scan or a smaller file.",
+      error: error instanceof Error ? `The documents could not be analyzed: ${error.message}` : "The documents could not be analyzed.",
+      diagnostic: "DOCUMENT_ANALYSIS_INTERNAL_ERROR",
     }, 500);
   }
 }
