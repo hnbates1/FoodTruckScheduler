@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import AppRuntime from "./AppRuntime";
 import TruckCommentsRuntime from "./TruckCommentsRuntime";
+import UiCopyRuntime from "./UiCopyRuntime";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,6 +40,7 @@ export default function RootLayout({
         <AppRuntime>
           {children}
           <TruckCommentsRuntime />
+          <UiCopyRuntime />
         </AppRuntime>
       </body>
     </html>
