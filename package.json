@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "prepare:source": "node scripts/apply-location-schedule-settings.mjs && node scripts/apply-export-and-grid-fixes.mjs && node scripts/add-stored-document-analysis.mjs && node scripts/fix-openai-document-analysis.mjs",
+    "prepare:source": "node scripts/apply-location-schedule-settings.mjs && node scripts/apply-export-and-grid-fixes.mjs && node scripts/add-stored-document-analysis.mjs && node scripts/fix-openai-document-analysis.mjs && node scripts/fix-openai-file-upload-v2.mjs && node scripts/add-analysis-runtime-diagnostics.mjs",
     "dev": "npm run prepare:source && vite",
     "prebuild": "npm run prepare:source",
     "build": "vinext build",
