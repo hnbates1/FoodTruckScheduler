@@ -283,6 +283,36 @@ export default function ExistingTruckDocumentsRuntime() {
     }
   }
 
+  async function analyzeStoredDocuments() {
+    if (!truck || !documents.length) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    setAnalysis(null);
+    setSelectedFields(new Set());
+    try {
+      const body = new FormData();
+      const selectedDocuments = documents.slice(0, 6);
+      for (const document of selectedDocuments) {
+        const response = await fetch(`/api/truck-documents?id=${document.id}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(await errorMessage(response, `${document.fileName} could not be downloaded for analysis.`));
+        const blob = await response.blob();
+        body.append("files", new File([blob], document.fileName, { type: document.contentType || blob.type || "application/octet-stream" }));
+      }
+      const response = await fetch("/api/intake-analysis", { method: "POST", body });
+      if (!response.ok) throw new Error(await errorMessage(response, "The stored documents could not be analyzed."));
+      const result = await response.json() as IntakeAnalysis;
+      setAnalysis(result);
+      const suggestedRows = reviewRows(truck, result);
+      setSelectedFields(new Set(suggestedRows.filter((row) => row.confidence >= 0.6).map((row) => row.field)));
+      setMessage(`${selectedDocuments.length} stored ${selectedDocuments.length === 1 ? "document was" : "documents were"} analyzed. Review the suggested changes below.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The stored documents could not be analyzed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggleField(field: UpdateField) {
     setSelectedFields((current) => {
       const next = new Set(current);
@@ -338,7 +368,7 @@ export default function ExistingTruckDocumentsRuntime() {
     <style>{`
       .existing-documents{margin:24px 0 20px;padding-top:20px;border-top:1px solid #284864;color:#dcecff}
       .existing-documents-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:13px}.existing-documents-head h4{margin:0 0 4px;font-size:15px}.existing-documents-head p{margin:0;color:#8fa7bd;font-size:10px;line-height:1.5}.existing-documents-count{min-width:28px;height:28px;display:grid;place-items:center;border:1px solid #45627b;border-radius:50%;font-size:10px;font-weight:800}
-      .existing-upload{display:grid;gap:9px;padding:13px;border:1px solid #294a68;border-radius:9px;background:#0a2038}.existing-upload label{display:grid;gap:5px;padding:11px;border:1px dashed #4a6a83;border-radius:7px;background:#071a2f;cursor:pointer}.existing-upload label strong{font-size:10px}.existing-upload label span{color:#829db4;font-size:9px}.existing-upload input{color:#adc5d8;font-size:9px}.existing-file-chips{display:flex;gap:6px;flex-wrap:wrap}.existing-file-chips span{padding:4px 7px;border:1px solid #395b75;border-radius:8px;font-size:9px}.existing-upload-actions{display:flex;justify-content:flex-end}.existing-status{margin:10px 0 0;padding:9px;border-radius:7px;font-size:10px;line-height:1.45}.existing-status.good{border:1px solid #527d38;background:#142d18;color:#cfffaf}.existing-status.bad{border:1px solid #8b3935;background:#3a1719;color:#ffb1aa}
+      .existing-upload{display:grid;gap:9px;padding:13px;border:1px solid #294a68;border-radius:9px;background:#0a2038}.existing-upload label{display:grid;gap:5px;padding:11px;border:1px dashed #4a6a83;border-radius:7px;background:#071a2f;cursor:pointer}.existing-upload label strong{font-size:10px}.existing-upload label span{color:#829db4;font-size:9px}.existing-upload input{color:#adc5d8;font-size:9px}.existing-file-chips{display:flex;gap:6px;flex-wrap:wrap}.existing-file-chips span{padding:4px 7px;border:1px solid #395b75;border-radius:8px;font-size:9px}.existing-upload-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}.existing-status{margin:10px 0 0;padding:9px;border-radius:7px;font-size:10px;line-height:1.45}.existing-status.good{border:1px solid #527d38;background:#142d18;color:#cfffaf}.existing-status.bad{border:1px solid #8b3935;background:#3a1719;color:#ffb1aa}
       .stored-documents{display:grid;gap:8px;margin-top:12px}.stored-document{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px;border:1px solid #294a68;border-radius:8px;background:#091e34}.stored-document strong{display:block;font-size:10px;overflow-wrap:anywhere}.stored-document small{display:block;margin-top:3px;color:#7f99af;font-size:8px}.stored-document-actions{display:flex;gap:9px;align-items:center}.stored-document-actions a,.stored-document-actions button{border:0;background:transparent;color:#8fc0ea;padding:0;font-size:9px;font-weight:800;cursor:pointer}.stored-document-actions button{color:#ff9187}
       .existing-review{display:grid;gap:9px;margin-top:14px;padding-top:14px;border-top:1px solid #31516c}.existing-review h4{margin:0;font-size:13px}.existing-review p{margin:0;color:#8fa7bd;font-size:9px;line-height:1.45}.review-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;padding:10px;border:1px solid #31516c;border-radius:8px;background:#081c31}.review-row>input{margin-top:3px}.review-row-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.review-row-head strong{font-size:10px}.review-confidence{padding:2px 6px;border:1px solid #4f6c83;border-radius:8px;color:#a9c2d7;font-size:8px}.review-values{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:7px}.review-values div{padding:7px;border-radius:6px;background:#07182a}.review-values span{display:block;color:#7993aa;font-size:8px;text-transform:uppercase;letter-spacing:.05em}.review-values p{margin:4px 0 0;color:#dcecff;font-size:10px;white-space:pre-wrap;overflow-wrap:anywhere}.review-source{display:block;margin-top:6px;color:#748fa5;font-size:8px}.existing-review-actions{display:flex;justify-content:flex-end;margin-top:3px}.existing-empty{margin-top:11px;padding:14px;border:1px dashed #34536e;border-radius:8px;text-align:center;color:#7f99af;font-size:9px}
       @media(max-width:700px){.stored-document{grid-template-columns:1fr}.review-values{grid-template-columns:1fr}.existing-upload-actions button,.existing-review-actions button{width:100%}}
@@ -356,7 +386,7 @@ export default function ExistingTruckDocumentsRuntime() {
           <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.docx,application/pdf,image/jpeg,image/png,image/webp,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { setFiles(Array.from(event.target.files || []).slice(0, 6)); setAnalysis(null); setSelectedFields(new Set()); setError(""); setMessage(""); }} />
         </label>
         {files.length > 0 && <div className="existing-file-chips">{files.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}</div>}
-        <div className="existing-upload-actions"><button className="primary" type="button" disabled={busy || !files.length} onClick={() => void uploadAndAnalyze()}>{busy ? "Uploading and Analyzing…" : "Upload and Analyze"}</button></div>
+        <div className="existing-upload-actions">{documents.length > 0 && <button className="secondary" type="button" disabled={busy} onClick={() => void analyzeStoredDocuments()}>{busy ? "Analyzing…" : "Analyze Stored Documents"}</button>}<button className="primary" type="button" disabled={busy || !files.length} onClick={() => void uploadAndAnalyze()}>{busy ? "Uploading and Analyzing…" : "Upload and Analyze"}</button></div>
       </div>
 
       {message && <div className="existing-status good" role="status">✓ {message}</div>}
