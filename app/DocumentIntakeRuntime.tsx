@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 type SuggestedField = {
@@ -141,7 +141,8 @@ function applySuggestions(form: HTMLFormElement, analysis: IntakeAnalysis, repla
   if (fillInput(form, 'textarea[name="notes"]', fields.notes.value, replaceExisting)) filled += 1;
 
   if (fields.cuisine.value) {
-    const select = form.querySelector<HTMLSelectElement>('select option[value="custom"]')?.parentElement as HTMLSelectElement | null;
+    const customOption = form.querySelector<HTMLOptionElement>('select option[value="custom"]');
+    const select = customOption?.parentElement as HTMLSelectElement | null;
     if (select && (replaceExisting || !select.value)) {
       const selectedValue = bestCuisineOption(select, fields.cuisine.value);
       setNativeValue(select, selectedValue);
@@ -262,11 +263,11 @@ export default function DocumentIntakeRuntime() {
     if (!analysis) return [];
     const values = FIELD_LABELS.flatMap(([key, label]) => {
       const field = analysis.fields[key];
-      return field.value ? [{ key, label, value: field.value, confidence: field.confidence, source: field.source }] : [];
+      return field.value ? [{ key: String(key), label, value: field.value, confidence: field.confidence, source: field.source }] : [];
     });
     if (analysis.fields.paymentTypes.values.length) {
       values.push({
-        key: "paymentTypes" as keyof Omit<IntakeAnalysis["fields"], "paymentTypes">,
+        key: "paymentTypes",
         label: "Payment Types",
         value: analysis.fields.paymentTypes.values.join(", "),
         confidence: analysis.fields.paymentTypes.confidence,
@@ -276,8 +277,7 @@ export default function DocumentIntakeRuntime() {
     return values;
   }, [analysis]);
 
-  async function analyze(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function analyze() {
     if (!files.length || !truckForm) return;
     setBusy(true);
     setError("");
@@ -318,7 +318,7 @@ export default function DocumentIntakeRuntime() {
       .document-intake-head h3{margin:0 0 4px;font-size:15px}
       .document-intake-head p{margin:0;color:#9eb4c8;font-size:10px;line-height:1.5}
       .document-intake-badge{padding:4px 7px;border:1px solid #6b9345;border-radius:10px;color:#cfff9e;background:#16321b;font-size:9px;font-weight:900;white-space:nowrap}
-      .document-intake form{display:grid;gap:10px}
+      .document-intake-body{display:grid;gap:10px}
       .document-drop{display:grid;gap:5px;padding:13px;border:1px dashed #54748e;border-radius:8px;background:#071a2f;cursor:pointer}
       .document-drop strong{font-size:11px}.document-drop span{color:#8fa8bd;font-size:9px}.document-drop input{width:100%;color:#bcd0e1;font-size:10px}
       .document-file-list{display:flex;gap:6px;flex-wrap:wrap}
@@ -341,7 +341,7 @@ export default function DocumentIntakeRuntime() {
         <div><h3>AI Document Intake</h3><p>Upload vendor documents to prefill the truck profile. You remain responsible for reviewing every field.</p></div>
         <span className="document-intake-badge">AI ASSISTED</span>
       </div>
-      <form onSubmit={analyze}>
+      <div className="document-intake-body">
         <label className="document-drop">
           <strong>Choose Documents</strong>
           <span>PDF, JPG, PNG, WebP, or Word • Up to 6 files • 10 MB each</span>
@@ -361,15 +361,15 @@ export default function DocumentIntakeRuntime() {
         <div className="document-intake-controls">
           <label><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} /> Replace fields I already entered</label>
           {analysis && <button className="secondary" type="button" disabled={busy} onClick={applyAgain}>Apply Suggestions</button>}
-          <button className="primary" type="submit" disabled={busy || !files.length}>{busy ? "Reading and Analyzing…" : "Analyze and Fill Form"}</button>
+          <button className="primary" type="button" disabled={busy || !files.length} onClick={() => void analyze()}>{busy ? "Reading and Analyzing…" : "Analyze and Fill Form"}</button>
         </div>
-      </form>
+      </div>
       {message && <div className="document-intake-status good" role="status">✓ {message}</div>}
       {error && <div className="document-intake-status bad" role="alert">△ {error}</div>}
       {analysis && <div className="document-analysis">
         <h4>Suggested Intake Information</h4>
         {visibleSuggestions.length > 0
-          ? <div className="document-analysis-grid">{visibleSuggestions.map((field) => <article className="document-suggestion" key={String(field.key)}><strong>{field.label} • {fieldConfidence(field.confidence)} Confidence</strong><p>{field.value}</p><small>{field.source || "Source not identified"}</small></article>)}</div>
+          ? <div className="document-analysis-grid">{visibleSuggestions.map((field) => <article className="document-suggestion" key={field.key}><strong>{field.label} • {fieldConfidence(field.confidence)} Confidence</strong><p>{field.value}</p><small>{field.source || "Source not identified"}</small></article>)}</div>
           : <div className="document-intake-status bad">No reliable intake fields were found. Try a clearer scan or another document.</div>}
         {analysis.documents.length > 0 && <div className="document-detected">{analysis.documents.map((document, index) => <article key={`${document.fileName}-${index}`}><strong>{documentType(document.type)} • {document.fileName}</strong><p>{document.summary}</p></article>)}</div>}
         {analysis.warnings.length > 0 && <ul className="document-warning">{analysis.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul>}
