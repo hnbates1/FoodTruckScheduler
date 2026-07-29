@@ -3,6 +3,8 @@
 import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
 import { VISIT_OUTCOMES } from "./lib/reliability";
 
+/* location-schedule-settings-v1 */
+
 type Truck = {
   id: number;
   name: string;
@@ -48,7 +50,7 @@ type Visit = {
 type AppData = { trucks: Truck[]; visits: Visit[]; storage?: "postgres" };
 type View = "dashboard" | "schedule" | "trucks" | "insights" | "location";
 type SessionUser = { id: number; email: string; name: string; storeNumber: string; role: string };
-type LocationProfile = { storeName: string; storeNumber: string; street: string; city: string; state: string; zip: string; phone: string; timezone: string; notes: string; operatingHours: DayAvailability[]; closedDates: string[] };
+type LocationProfile = { storeName: string; storeNumber: string; street: string; city: string; state: string; zip: string; phone: string; timezone: string; notes: string; operatingHours: DayAvailability[]; closedDates: string[]; weekStartsOn?: number };
 type GooglePlaceProfile = {
   placeId: string;
   name: string;
@@ -310,7 +312,7 @@ export default function Home() {
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [outcomeVisitId, setOutcomeVisitId] = useState<number | null>(null);
   const [visitDraft, setVisitDraft] = useState({ visitDate: "2026-07-27", startTime: "11:00", endTime: "14:00", truckId: 1 });
-  const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "", operatingHours: weekDays.map(({ day }) => ({ day, enabled: day >= 1 && day <= 6, start: "06:00", end: "22:00" })), closedDates: [] });
+  const [location, setLocation] = useState<LocationProfile>({ storeName: "Lowe's", storeNumber: "0244", street: "", city: "", state: "OH", zip: "", phone: "", timezone: "America/New_York", notes: "", operatingHours: weekDays.map(({ day }) => ({ day, enabled: day >= 1 && day <= 6, start: "06:00", end: "22:00" })), closedDates: [], weekStartsOn: 6 });
   const [locationTraffic, setLocationTraffic] = useState<LocationTraffic | null>(null);
   const [locationTrafficLoading, setLocationTrafficLoading] = useState(false);
   const [googleReviews, setGoogleReviews] = useState<Record<number, GoogleReviewState>>({});
@@ -374,7 +376,7 @@ export default function Home() {
         const response = await fetch("/api/location", { cache: "no-store" });
         const result = await response.json() as { location?: LocationProfile | null };
         if (response.ok && result.location) {
-          setLocation(result.location);
+          setLocation({ ...result.location, weekStartsOn: Number.isInteger(result.location.weekStartsOn) ? result.location.weekStartsOn : 6 });
           return;
         }
       } catch {
@@ -382,7 +384,7 @@ export default function Home() {
       }
       const saved = window.localStorage.getItem("food-truck-admin-location");
       if (saved) {
-        try { setLocation(JSON.parse(saved) as LocationProfile); } catch { window.localStorage.removeItem("food-truck-admin-location"); }
+        try { const parsed = JSON.parse(saved) as LocationProfile; setLocation({ ...parsed, weekStartsOn: Number.isInteger(parsed.weekStartsOn) ? parsed.weekStartsOn : 6 }); } catch { window.localStorage.removeItem("food-truck-admin-location"); }
       }
     }
     if (user) void loadLocation();
@@ -438,7 +440,8 @@ export default function Home() {
     user,
   ]);
 
-  const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(selectedDate, i - selectedDate.getDay() + 1)), [selectedDate]);
+  const weekStartsOn = Number.isInteger(location.weekStartsOn) ? Number(location.weekStartsOn) : 6;
+  const week = useMemo(() => { const offset = (selectedDate.getDay() - weekStartsOn + 7) % 7; const start = addDays(selectedDate, -offset); return Array.from({ length: 7 }, (_, i) => addDays(start, i)); }, [selectedDate, weekStartsOn]);
   const dayVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
   const selectedTruck = data.trucks.find((truck) => truck.id === selectedTruckId) ?? data.trucks[0];
   const outcomeVisit = data.visits.find((visit) => visit.id === outcomeVisitId);
@@ -688,7 +691,10 @@ export default function Home() {
   }
 
   function openVisitModal(visitDate = dateKey(selectedDate), startTime = "11:00", truckId = selectedTruckId) {
-    const endTime = timeFromMinutes(Math.min(1200, minutes(startTime) + 180));
+    const visitDay = new Date(`${visitDate}T12:00:00`).getDay();
+    const dayHours = location.operatingHours?.find((slot) => slot.day === visitDay);
+    const closingMinutes = dayHours?.enabled ? minutes(dayHours.end) : 1440;
+    const endTime = timeFromMinutes(Math.min(closingMinutes, minutes(startTime) + 180));
     setVisitDraft({ visitDate, startTime, endTime, truckId });
     setSelectedTruckId(truckId);
     setModal("visit");
@@ -896,7 +902,7 @@ export default function Home() {
               <article><span className="metric-icon blue">★</span><div><strong>{Math.round(data.trucks.reduce((sum, t) => sum + t.reliability, 0) / Math.max(1, data.trucks.length))}%</strong><p>Avg Reliability</p><small>From recorded outcomes</small></div></article>
             </div>
 
-            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} traffic={locationTraffic} trafficLoading={locationTrafficLoading} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />
+            <ScheduleBoard visits={dayVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} operatingHours={location.operatingHours} traffic={locationTraffic} trafficLoading={locationTrafficLoading} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />
             <div className="legend"><span><i className="blue-swatch" />Confirmed</span><span><i className="green-swatch" />Available</span><span><i className="stripe-swatch" />Conflict</span><span><i className="amber-swatch" />Documents expiring</span><span><i className="traffic-swatch" />Typical location traffic</span></div>
           </section>
           <aside className="right-rail">
@@ -906,7 +912,7 @@ export default function Home() {
         </div>
       )}
 
-      {view === "schedule" && <ScheduleView data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} traffic={locationTraffic} trafficLoading={locationTrafficLoading} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />}
+      {view === "schedule" && <ScheduleView data={data} location={location} selectedDate={selectedDate} setSelectedDate={setSelectedDate} traffic={locationTraffic} trafficLoading={locationTrafficLoading} onSchedule={() => openVisitModal()} onSelect={setSelectedTruckId} onUpdateVisit={updateVisit} onAddVisit={openVisitModal} onDeleteVisit={deleteVisit} onRecordOutcome={setOutcomeVisitId} />}
       {view === "trucks" && <TrucksView trucks={filteredTrucks} selectedId={selectedTruckId} setSelectedId={setSelectedTruckId} onAdd={() => setModal("truck")} onDelete={setPendingDeleteId} onLogoChange={updateTruckLogo} role={user.role} googleReviews={googleReviews} onLoadGoogleReview={loadGoogleReview} onSearchGooglePlaces={searchGooglePlaces} onUnlinkGooglePlace={unlinkGooglePlace} />}
       {view === "insights" && <Insights data={data} />}
       {view === "location" && <LocationView location={location} onSave={(next) => { setLocation(next); window.localStorage.setItem("food-truck-admin-location", JSON.stringify(next)); void fetch("/api/location", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) }).then((response) => { if (!response.ok) throw new Error(); notify("Location profile updated"); }).catch(() => notify("Location saved locally, but could not be shared")); }} />}
@@ -992,9 +998,13 @@ function trafficLinePath(values: number[]) {
 function TrafficCurveRow({
   traffic,
   loading,
+  timelineStart,
+  timelineEnd,
 }: {
   traffic: LocationTraffic | null;
   loading: boolean;
+  timelineStart: number;
+  timelineEnd: number;
 }) {
   if (!traffic && !loading) return null;
   const values = Array.from(
@@ -1006,6 +1016,11 @@ function TrafficCurveRow({
     ? `M 0 68 L ${linePath.slice(1)} L 1000 68 Z`
     : "";
   const peak = Math.max(...values);
+  const timelineSpan = Math.max(60, timelineEnd - timelineStart);
+  const trafficPlotStart = Math.max(timelineStart, 600);
+  const trafficPlotEnd = Math.min(timelineEnd, 1200);
+  const trafficPlotLeft = ((trafficPlotStart - timelineStart) / timelineSpan) * 100;
+  const trafficPlotWidth = Math.max(0, ((trafficPlotEnd - trafficPlotStart) / timelineSpan) * 100);
   const sourceLabel = traffic?.source === "previous"
     ? "Previous successful week used"
     : traffic?.source === "next"
@@ -1027,7 +1042,7 @@ function TrafficCurveRow({
         ? <span className="traffic-message">Loading typical traffic…</span>
         : traffic?.available
           ? <>
-            <svg viewBox="0 0 1000 72" preserveAspectRatio="none" role="img" aria-label={`Estimated typical location traffic from 10 AM to 8 PM; peak relative activity ${peak} out of 100`}>
+            <svg style={{ left: `${trafficPlotLeft}%`, right: "auto", width: `${trafficPlotWidth}%` }} viewBox="0 0 1000 72" preserveAspectRatio="none" role="img" aria-label={`Estimated typical location traffic from 10 AM to 8 PM; peak relative activity ${peak} out of 100`}>
               <defs>
                 <linearGradient id="traffic-area-fill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#a8d86e" stopOpacity=".34" />
@@ -1045,13 +1060,16 @@ function TrafficCurveRow({
   </div>;
 }
 
-function ScheduleBoard({ visits, trucks, overlaps, visitDate, traffic, trafficLoading, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit, onRecordOutcome }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; visitDate: string; traffic: LocationTraffic | null; trafficLoading: boolean; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void; onRecordOutcome: (visitId: number) => void }) {
+function ScheduleBoard({ visits, trucks, overlaps, visitDate, operatingHours, traffic, trafficLoading, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit, onRecordOutcome }: { visits: Visit[]; trucks: Truck[]; overlaps: Visit[][]; visitDate: string; operatingHours: DayAvailability[]; traffic: LocationTraffic | null; trafficLoading: boolean; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void; onRecordOutcome: (visitId: number) => void }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [contextMenu, setContextMenu] = useState<ScheduleContextMenu | null>(null);
   const [now, setNow] = useState(() => new Date());
-  const timelineStart = 600;
-  const timelineEnd = 1200;
+  const visitDay = new Date(`${visitDate}T12:00:00`).getDay();
+  const dayHours = operatingHours?.find((slot) => slot.day === visitDay);
+  const timelineStart = dayHours?.enabled ? minutes(dayHours.start) : 360;
+  const timelineEnd = dayHours?.enabled && minutes(dayHours.end) > timelineStart ? minutes(dayHours.end) : 1320;
   const timelineSpan = timelineEnd - timelineStart;
+  const timelineColumns = Math.max(1, Math.ceil(timelineSpan / 60));
   const shown = visits;
   const today = dateKey(todayAtNoon());
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -1113,10 +1131,10 @@ function ScheduleBoard({ visits, trucks, overlaps, visitDate, traffic, trafficLo
     setContextMenu({ kind: "open", x: event.clientX, y: event.clientY, time: timeAtPointer(event), truckId });
   }
 
-  return <div className="schedule-board">
+  return <div className="schedule-board" style={{ "--timeline-columns": timelineColumns } as React.CSSProperties}>
     <div className="schedule-help"><span>Drag a shift to move it</span><span>Drag either edge to resize</span><span>15-minute increments</span></div>
-    <div className="time-head"><strong>TRUCKS</strong>{Array.from({ length: 10 }, (_, i) => <span key={i}>{formatTime(`${10 + i}:00`).replace(":00", "")}</span>)}</div>
-    <TrafficCurveRow traffic={traffic} loading={trafficLoading} />
+    <div className="time-head" style={{ gridTemplateColumns: `225px repeat(${timelineColumns}, minmax(58px, 1fr))` }}><strong>TRUCKS</strong>{Array.from({ length: timelineColumns }, (_, i) => <span key={i}>{formatTime(timeFromMinutes(timelineStart + i * 60)).replace(":00", "")}</span>)}</div>
+    <TrafficCurveRow traffic={traffic} loading={trafficLoading} timelineStart={timelineStart} timelineEnd={timelineEnd} />
     {!shown.length && <div className="empty-schedule" onContextMenu={openTimelineMenu}><strong>No trucks scheduled for this day</strong><span>Right-click anywhere here to add a visit.</span></div>}
     {shown.map((visit) => {
       const truck = trucks.find((t) => t.id === visit.truckId)!;
@@ -1160,9 +1178,11 @@ function Assistant({ recommendation, selectedDate, onSchedule }: { recommendatio
   </article>;
 }
 
-function ScheduleView({ data, selectedDate, setSelectedDate, traffic, trafficLoading, onSchedule, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit, onRecordOutcome }: { data: AppData; selectedDate: Date; setSelectedDate: (d: Date) => void; traffic: LocationTraffic | null; trafficLoading: boolean; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void; onRecordOutcome: (visitId: number) => void }) {
+function ScheduleView({ data, location, selectedDate, setSelectedDate, traffic, trafficLoading, onSchedule, onSelect, onUpdateVisit, onAddVisit, onDeleteVisit, onRecordOutcome }: { data: AppData; location: LocationProfile; selectedDate: Date; setSelectedDate: (d: Date) => void; traffic: LocationTraffic | null; trafficLoading: boolean; onSchedule: () => void; onSelect: (id: number) => void; onUpdateVisit: (visitId: number, startTime: string, endTime: string) => void; onAddVisit: (visitDate: string, startTime: string, truckId?: number) => void; onDeleteVisit: (visitId: number) => void; onRecordOutcome: (visitId: number) => void }) {
   const [mode, setMode] = useState<"gantt" | "calendar">("gantt");
-  const weekStart = addDays(selectedDate, -selectedDate.getDay() + 1);
+  const configuredWeekStart = Number.isInteger(location.weekStartsOn) ? Number(location.weekStartsOn) : 6;
+  const weekOffset = (selectedDate.getDay() - configuredWeekStart + 7) % 7;
+  const weekStart = addDays(selectedDate, -weekOffset);
   const days = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i));
   const selectedVisits = data.visits.filter((visit) => visit.visitDate === dateKey(selectedDate));
   const exportCount = data.visits.filter((visit) => visit.status.toLowerCase() !== "cancelled").length;
@@ -1186,7 +1206,7 @@ function ScheduleView({ data, selectedDate, setSelectedDate, traffic, trafficLoa
     </div>
     <div className="schedule-datebar"><div><button onClick={() => setSelectedDate(addDays(selectedDate, -1))}>‹</button><strong>{selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</strong><button onClick={() => setSelectedDate(addDays(selectedDate, 1))}>›</button></div><button className="secondary" onClick={() => setSelectedDate(todayAtNoon())}>Today</button></div>
     <div className="week-strip schedule-week">{days.slice(0, 7).map((date) => <button key={dateKey(date)} className={dateKey(date) === dateKey(selectedDate) ? "selected" : ""} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</strong></button>)}</div>
-    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} traffic={traffic} trafficLoading={trafficLoading} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} onRecordOutcome={onRecordOutcome} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={(event) => { event.stopPropagation(); onRecordOutcome(visit.id); }}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)} • {visit.outcome || visit.status}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
+    {mode === "gantt" ? <ScheduleBoard visits={selectedVisits} trucks={data.trucks} overlaps={overlaps} visitDate={dateKey(selectedDate)} operatingHours={location.operatingHours} traffic={traffic} trafficLoading={trafficLoading} onSelect={onSelect} onUpdateVisit={onUpdateVisit} onAddVisit={onAddVisit} onDeleteVisit={onDeleteVisit} onRecordOutcome={onRecordOutcome} /> : <div className="calendar-grid">{days.map((date) => { const visits = data.visits.filter((v) => v.visitDate === dateKey(date)); return <button key={dateKey(date)} className={`day-card ${dateKey(date) === dateKey(selectedDate) ? "selected" : ""}`} onClick={() => setSelectedDate(date)}><span>{date.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{date.getDate()}</strong><div>{visits.map((visit) => { const truck = data.trucks.find((t) => t.id === visit.truckId)!; return <i key={visit.id} style={{ borderColor: truck.color }} onClick={(event) => { event.stopPropagation(); onRecordOutcome(visit.id); }}>{truck.name}<small>{formatTime(visit.startTime)} – {formatTime(visit.endTime)} • {visit.outcome || visit.status}</small></i>; })}{!visits.length && <em>Open day</em>}</div></button>; })}</div>}
   </section>;
 }
 
@@ -1344,12 +1364,13 @@ function LocationView({ location, onSave }: { location: LocationProfile; onSave:
         city: String(values.city), state: String(values.state), zip: String(values.zip), phone: String(values.phone),
         timezone: String(values.timezone), notes: String(values.notes),
         operatingHours: weekDays.map(({ day }) => ({ day, enabled: openDays.has(day), start: String(form.get(`open_${day}`) || "06:00"), end: String(form.get(`close_${day}`) || "22:00") })),
+        weekStartsOn: Number(form.get("weekStartsOn") || 6),
         closedDates: String(values.closedDates || "").split(/\r?\n|,/).map((date) => date.trim()).filter(Boolean),
       });
       setEditing(false);
     }}>
       <label>Store name<input name="storeName" defaultValue={location.storeName} required /></label><label>Store number<input name="storeNumber" defaultValue={location.storeNumber} required /></label>
-      <label className="full">Street address<input name="street" defaultValue={location.street} required /></label><label>City<input name="city" defaultValue={location.city} required /></label><label>State<input name="state" defaultValue={location.state} required /></label><label>ZIP<input name="zip" defaultValue={location.zip} required /></label><label>Store phone<input name="phone" defaultValue={location.phone} /></label><label className="full">Scheduling time zone<input name="timezone" defaultValue={location.timezone} required /></label>
+      <label className="full">Street address<input name="street" defaultValue={location.street} required /></label><label>City<input name="city" defaultValue={location.city} required /></label><label>State<input name="state" defaultValue={location.state} required /></label><label>ZIP<input name="zip" defaultValue={location.zip} required /></label><label>Store phone<input name="phone" defaultValue={location.phone} /></label><label>Scheduling time zone<input name="timezone" defaultValue={location.timezone} required /></label><label>Week Starts On<select name="weekStartsOn" defaultValue={String(Number.isInteger(location.weekStartsOn) ? location.weekStartsOn : 6)}>{weekDays.map((day) => <option value={day.day} key={day.day}>{day.label}</option>)}</select></label>
       <fieldset className="full availability-editor"><legend>Hours of operation</legend><p>Turn days on or off and set the opening and closing times.</p>{weekDays.map(({ day, short, label }) => { const slot = hours.find((item) => item.day === day); return <div className="availability-row" key={day}><label className="day-check"><input type="checkbox" name="openDays" value={day} defaultChecked={slot?.enabled} /><span>{short}</span><small>{label}</small></label><label><span>Open</span><input type="time" name={`open_${day}`} defaultValue={slot?.start || "06:00"} /></label><label><span>Close</span><input type="time" name={`close_${day}`} defaultValue={slot?.end || "22:00"} /></label></div>; })}</fieldset>
       <label className="full">Store closure dates <span className="optional-label">One per line</span><textarea name="closedDates" defaultValue={(location.closedDates || []).join("\n")} placeholder={"2026-11-26\n2026-12-25"} /></label>
       <label className="full">Site notes for vendors<textarea name="notes" defaultValue={location.notes} placeholder="Where to park, available hookups, and who to check in with…" /></label>
@@ -1357,7 +1378,7 @@ function LocationView({ location, onSave }: { location: LocationProfile; onSave:
     </form></article></section>;
   }
   const addressIncomplete = ![location.street, location.city, location.state, location.zip].every((value) => value.trim());
-  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">STORE PROFILE</p><h1>Location</h1><p>The address, operating hours, and arrival details food-truck vendors need.</p></div><button className="primary" onClick={() => setEditing(true)}>✎ Edit details</button></div>{addressIncomplete && <div className="location-warning">△ <span><strong>Store address is incomplete</strong><small>Add the street, city, state, and ZIP before searching for nearby trucks.</small></span></div>}<article className="location-card"><div className="location-head"><span>◧</span><div><h2>{location.storeName}</h2><p>Store {location.storeNumber}</p></div></div><dl><div><dt>Address</dt><dd>{address || "Not provided"}</dd></div><div><dt>Phone</dt><dd>{location.phone || "Not provided"}</dd></div><div><dt>Time zone</dt><dd>{location.timezone}</dd></div></dl><h4>Hours of operation</h4><div className="availability-summary">{hours.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Closed"}</span></div>)}</div><h4>Scheduled closures</h4>{location.closedDates?.length ? <div className="closure-list">{location.closedDates.map((date) => <span key={date}>{new Date(date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>)}</div> : <p>No closure dates programmed.</p>}<h4>Site notes for vendors</h4><p>{location.notes || "No arrival notes yet."}</p></article></section>;
+  return <section className="content-page"><div className="section-heading"><div><p className="eyebrow">STORE PROFILE</p><h1>Location</h1><p>The address, operating hours, and arrival details food-truck vendors need.</p></div><button className="primary" onClick={() => setEditing(true)}>✎ Edit details</button></div>{addressIncomplete && <div className="location-warning">△ <span><strong>Store address is incomplete</strong><small>Add the street, city, state, and ZIP before searching for nearby trucks.</small></span></div>}<article className="location-card"><div className="location-head"><span>◧</span><div><h2>{location.storeName}</h2><p>Store {location.storeNumber}</p></div></div><dl><div><dt>Address</dt><dd>{address || "Not provided"}</dd></div><div><dt>Phone</dt><dd>{location.phone || "Not provided"}</dd></div><div><dt>Time zone</dt><dd>{location.timezone}</dd></div><div><dt>Week Starts On</dt><dd>{weekDays.find((day) => day.day === (Number.isInteger(location.weekStartsOn) ? location.weekStartsOn : 6))?.label || "Saturday"}</dd></div></dl><h4>Hours of operation</h4><div className="availability-summary">{hours.map((slot) => <div className={slot.enabled ? "available-day" : "closed-day"} key={slot.day}><strong>{weekDays.find((item) => item.day === slot.day)?.short}</strong><span>{slot.enabled ? `${formatTime(slot.start)} – ${formatTime(slot.end)}` : "Closed"}</span></div>)}</div><h4>Scheduled closures</h4>{location.closedDates?.length ? <div className="closure-list">{location.closedDates.map((date) => <span key={date}>{new Date(date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>)}</div> : <p>No closure dates programmed.</p>}<h4>Site notes for vendors</h4><p>{location.notes || "No arrival notes yet."}</p></article></section>;
 }
 
 function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {

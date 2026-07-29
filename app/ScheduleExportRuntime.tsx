@@ -290,7 +290,8 @@ function buildPdf(pages: PdfPage[]) {
   output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   offsets.slice(1).forEach((offset) => { output += `${String(offset).padStart(10, "0")} 00000 n \n`; });
   output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return new Blob([encoder.encode(output)], { type: "application/pdf" });
+  const bytes = encoder.encode(output);
+  return new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
 
 async function exportPdf(data: ReportData, location: LocationProfile | null, dates: string[], startDate: string, endDate: string) {
@@ -388,7 +389,7 @@ function worksheetXml(data: ReportData, location: LocationProfile | null, date: 
   merges.push(`A${rowNumber}:${columnName(lastColumn)}${rowNumber}`);
   rows.push(`<row r="${rowNumber}" ht="23" customHeight="1">${inlineCell(rowNumber, 0, "TRUCK REFERENCE KEY", 8)}</row>`);
   rowNumber += 1;
-  const cuisineEnd = Math.max(2, Math.floor(lastColumn * 0.45));
+  const cuisineEnd = Math.max(1, Math.floor(lastColumn * 0.45));
   merges.push(`B${rowNumber}:${columnName(cuisineEnd)}${rowNumber}`, `${columnName(cuisineEnd + 1)}${rowNumber}:${columnName(lastColumn)}${rowNumber}`);
   rows.push(`<row r="${rowNumber}" ht="22" customHeight="1">${inlineCell(rowNumber, 0, "Truck Name", 9)}${inlineCell(rowNumber, 1, "Cuisine Type", 9)}${inlineCell(rowNumber, cuisineEnd + 1, "Accepted Payment Types", 9)}</row>`);
   trucks.forEach((truck) => {
@@ -453,7 +454,8 @@ async function exportExcel(data: ReportData, location: LocationProfile | null, d
     { name: "xl/styles.xml", content: workbookStyles() },
     ...dates.map((date, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, content: worksheetXml(data, location, date) })),
   ];
-  download(new Blob([zipFiles(files)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileName(startDate, endDate, "xlsx"));
+  const archive = zipFiles(files);
+  download(new Blob([archive.buffer as ArrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileName(startDate, endDate, "xlsx"));
 }
 
 function selectedScheduleDate() {
@@ -499,7 +501,7 @@ export default function ScheduleExportRuntime() {
     function interact() { schedule(30); schedule(300); schedule(900); }
     document.addEventListener("click", interact, { passive: true });
     [50, 300, 1000, 2200].forEach(schedule);
-    return () => { active = false; timers.forEach(clearTimeout); document.removeEventListener("click", interact); };
+    return () => { active = false; timers.forEach((timer) => window.clearTimeout(timer)); document.removeEventListener("click", interact); };
   }, []);
 
   useEffect(() => {
