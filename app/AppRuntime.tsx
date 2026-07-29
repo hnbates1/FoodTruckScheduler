@@ -4,6 +4,7 @@ import {
   Component,
   type ErrorInfo,
   type ReactNode,
+  type RefObject,
   useEffect,
   useRef,
   useState,
@@ -151,12 +152,13 @@ function formatTime(totalMinutes: number) {
   return `${hour12}:${String(minute).padStart(2, "0")} ${hour24 >= 12 ? "PM" : "AM"}`;
 }
 
-function useTrafficHover(tooltipRef: React.RefObject<HTMLDivElement | null>) {
+function useTrafficHover(tooltipRef: RefObject<HTMLDivElement | null>) {
   const seriesByChart = useRef(new WeakMap<HTMLElement, TrafficSeries>());
 
   useEffect(() => {
     let animationFrame = 0;
     let latestEvent: PointerEvent | null = null;
+    const timers = new Set<number>();
 
     function hideTooltip() {
       const tooltip = tooltipRef.current;
@@ -197,6 +199,20 @@ function useTrafficHover(tooltipRef: React.RefObject<HTMLDivElement | null>) {
       const series = { values, low, high, enhancedPath };
       seriesByChart.current.set(chart, series);
       return series;
+    }
+
+    function enhanceVisibleCharts() {
+      document.querySelectorAll<HTMLElement>(".traffic-chart.available").forEach((chart) => {
+        ensureSeries(chart);
+      });
+    }
+
+    function scheduleEnhancement(delay: number) {
+      const timer = window.setTimeout(() => {
+        timers.delete(timer);
+        enhanceVisibleCharts();
+      }, delay);
+      timers.add(timer);
     }
 
     function updateTooltip() {
@@ -244,14 +260,23 @@ function useTrafficHover(tooltipRef: React.RefObject<HTMLDivElement | null>) {
       hideTooltip();
     }
 
+    function handleDocumentClick() {
+      scheduleEnhancement(50);
+      scheduleEnhancement(800);
+    }
+
     document.addEventListener("pointermove", handlePointerMove, { passive: true });
     document.addEventListener("pointerleave", handlePointerLeave);
+    document.addEventListener("click", handleDocumentClick, { passive: true });
     window.addEventListener("blur", handlePointerLeave);
+    [100, 500, 1500, 3000].forEach(scheduleEnhancement);
 
     return () => {
       if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      timers.forEach((timer) => window.clearTimeout(timer));
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerleave", handlePointerLeave);
+      document.removeEventListener("click", handleDocumentClick);
       window.removeEventListener("blur", handlePointerLeave);
     };
   }, [tooltipRef]);
@@ -264,6 +289,7 @@ export default function AppRuntime({ children }: RuntimeProps) {
 
   useEffect(() => {
     let active = true;
+    let reloading = false;
 
     async function repairImpossibleVisits() {
       try {
@@ -290,13 +316,13 @@ export default function AppRuntime({ children }: RuntimeProps) {
         }
 
         if (repaired > 0) {
+          reloading = true;
           window.location.reload();
-          return;
         }
       } catch (error) {
         console.warn("Schedule integrity check could not run", error);
       } finally {
-        if (active) setReady(true);
+        if (active && !reloading) setReady(true);
       }
     }
 
