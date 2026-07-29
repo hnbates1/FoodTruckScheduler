@@ -90,7 +90,7 @@ export default function VisitAvailabilityRuntime() {
     const timers = new Set<number>();
 
     async function loadTrucks() {
-      if (loaded.current || loading) return;
+      if (loaded.current) return;
       loaded.current = true;
       setLoading(true);
       setError("");
@@ -167,7 +167,7 @@ export default function VisitAvailabilityRuntime() {
       document.removeEventListener("click", handleInteraction);
       document.removeEventListener("change", handleInteraction);
     };
-  }, [loading]);
+  }, []);
 
   const truck = useMemo(() => trucks.find((item) => item.id === truckId) || null, [trucks, truckId]);
   const dayNumber = selectedDay(visitDate);
