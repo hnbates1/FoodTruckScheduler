@@ -1,0 +1,48 @@
+{
+  "id": "/",
+  "name": "Food Truck Admin",
+  "short_name": "Truck Admin",
+  "description": "Schedule food-truck visits, manage vendor profiles, documents, comments, and reports.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#061426",
+  "theme_color": "#061426",
+  "orientation": "any",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/app-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Schedule",
+      "short_name": "Schedule",
+      "description": "Open the food-truck schedule",
+      "url": "/?view=schedule&source=shortcut"
+    },
+    {
+      "name": "Food Trucks",
+      "short_name": "Trucks",
+      "description": "Open the vendor directory",
+      "url": "/?view=trucks&source=shortcut"
+    }
+  ]
+}
