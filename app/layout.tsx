@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import AppRuntime from "./AppRuntime";
 import DocumentIntakeRuntime from "./DocumentIntakeRuntime";
 import ExistingTruckDocumentsRuntime from "./ExistingTruckDocumentsRuntime";
+import ScheduleExportRuntime from "./ScheduleExportRuntime";
 import TruckCommentsRuntime from "./TruckCommentsRuntime";
 import UiCopyRuntime from "./UiCopyRuntime";
 import VisitAvailabilityRuntime from "./VisitAvailabilityRuntime";
@@ -44,6 +45,7 @@ export default function RootLayout({
           {children}
           <DocumentIntakeRuntime />
           <ExistingTruckDocumentsRuntime />
+          <ScheduleExportRuntime />
           <TruckCommentsRuntime />
           <VisitAvailabilityRuntime />
           <UiCopyRuntime />
