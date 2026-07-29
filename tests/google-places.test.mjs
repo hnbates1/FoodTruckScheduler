@@ -5,7 +5,9 @@ import {
   googlePlaceProfile,
   googlePlacesSearchQuery,
   hasCompleteGooglePlacesLocation,
+  hasGooglePlacesSearchArea,
   isGooglePlaceId,
+  rankGooglePlaceCandidates,
 } from "../app/lib/google-places.ts";
 
 test("builds a bounded food-truck search near the store", () => {
@@ -17,6 +19,25 @@ test("builds a bounded food-truck search near the store", () => {
       zip: "44446",
     }),
     "Taco Trail food truck near 940 Niles Cortland Rd SE, Niles OH 44446",
+  );
+});
+
+test("lets an editor correct the search name and area", () => {
+  assert.equal(
+    googlePlacesSearchQuery(
+      "Taco Trail",
+      {
+        street: "940 Niles Cortland Rd SE",
+        city: "Niles",
+        state: "OH",
+        zip: "44446",
+      },
+      {
+        searchText: "The Original Taco Trail",
+        searchArea: "Youngstown, OH",
+      },
+    ),
+    "The Original Taco Trail near Youngstown, OH",
   );
 });
 
@@ -38,6 +59,14 @@ test("requires a complete store address before searching Google", () => {
     }),
     false,
   );
+  assert.equal(
+    hasGooglePlacesSearchArea({}, "Youngstown, OH"),
+    true,
+  );
+  assert.equal(
+    hasGooglePlacesSearchArea({}, "  "),
+    false,
+  );
 });
 
 test("keeps Google search queries within the API limit", () => {
@@ -49,6 +78,64 @@ test("keeps Google search queries within the API limit", () => {
   });
   assert.ok(query.length <= 240);
   assert.match(query, /food truck near/);
+});
+
+test("ranks AI matches and leaves missing judgments visible", () => {
+  const candidates = [
+    googlePlaceProfile({
+      id: "ChIJ_wrong_12345",
+      displayName: { text: "Completely Different Restaurant" },
+    }),
+    googlePlaceProfile({
+      id: "ChIJ_right_12345",
+      displayName: { text: "Taco Trail" },
+    }),
+    googlePlaceProfile({
+      id: "ChIJ_unsure_12345",
+      displayName: { text: "Taco Trailer" },
+    }),
+  ].filter(Boolean);
+  const ranking = rankGooglePlaceCandidates(candidates, {
+    response: {
+      matches: [
+        {
+          placeId: "ChIJ_wrong_12345",
+          matchLevel: "unlikely",
+          reason: "The business name is unrelated.",
+        },
+        {
+          placeId: "ChIJ_right_12345",
+          matchLevel: "likely",
+          reason: "The names match exactly.",
+        },
+      ],
+    },
+  });
+  assert.equal(ranking.applied, true);
+  assert.deepEqual(
+    ranking.candidates.map((candidate) => [
+      candidate.placeId,
+      candidate.matchLevel,
+    ]),
+    [
+      ["ChIJ_right_12345", "likely"],
+      ["ChIJ_unsure_12345", "possible"],
+      ["ChIJ_wrong_12345", "unlikely"],
+    ],
+  );
+});
+
+test("keeps Google order when AI output is unusable", () => {
+  const candidate = googlePlaceProfile({
+    id: "ChIJ_place_12345",
+    displayName: { text: "Taco Trail" },
+  });
+  const ranking = rankGooglePlaceCandidates(
+    candidate ? [candidate] : [],
+    { response: "not json" },
+  );
+  assert.equal(ranking.applied, false);
+  assert.equal(ranking.candidates[0]?.placeId, "ChIJ_place_12345");
 });
 
 test("normalizes Google ratings and review-summary disclosure", () => {

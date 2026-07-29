@@ -61,6 +61,8 @@ type GooglePlaceProfile = {
   summaryDisclosure: string;
   summaryReviewsUri: string;
   summaryFlagUri: string;
+  matchLevel?: "likely" | "possible" | "unlikely";
+  matchReason?: string;
 };
 type GoogleReviewState = {
   loading: boolean;
@@ -77,6 +79,7 @@ type GoogleReviewResponse = {
   profile?: GooglePlaceProfile;
   candidates?: GooglePlaceProfile[];
   query?: string;
+  aiAssisted?: boolean;
   error?: string;
 };
 
@@ -301,6 +304,10 @@ export default function Home() {
   const [googleSearchTruckId, setGoogleSearchTruckId] = useState<number | null>(null);
   const [googleCandidates, setGoogleCandidates] = useState<GooglePlaceProfile[]>([]);
   const [googleSearchQuery, setGoogleSearchQuery] = useState("");
+  const [googleSearchTerms, setGoogleSearchTerms] = useState("");
+  const [googleSearchArea, setGoogleSearchArea] = useState("");
+  const [googleAiAssisted, setGoogleAiAssisted] = useState(false);
+  const [showUnlikelyGoogleMatches, setShowUnlikelyGoogleMatches] = useState(false);
   const [googleSearchBusy, setGoogleSearchBusy] = useState(false);
   const [googleSearchError, setGoogleSearchError] = useState("");
 
@@ -521,22 +528,39 @@ export default function Home() {
     }
   }
 
-  async function searchGooglePlaces(truckId: number) {
+  async function searchGooglePlaces(
+    truckId: number,
+    searchText?: string,
+    searchArea?: string,
+  ) {
+    const truckName = data.trucks.find((truck) => truck.id === truckId)?.name || "";
+    const nextSearchText = (searchText ?? `${truckName} food truck`).trim();
+    const nextSearchArea = (searchArea ?? "").trim();
     setGoogleSearchTruckId(truckId);
+    setGoogleSearchTerms(nextSearchText);
+    setGoogleSearchArea(nextSearchArea);
     setGoogleCandidates([]);
     setGoogleSearchQuery("");
+    setGoogleAiAssisted(false);
+    setShowUnlikelyGoogleMatches(false);
     setGoogleSearchError("");
     setGoogleSearchBusy(true);
     try {
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "search", truckId }),
+        body: JSON.stringify({
+          action: "search",
+          truckId,
+          searchText: nextSearchText,
+          searchArea: nextSearchArea,
+        }),
       });
       const result = await response.json() as GoogleReviewResponse;
       if (!response.ok) throw new Error(result.error || "Google could not search for this truck.");
       setGoogleCandidates(result.candidates || []);
       setGoogleSearchQuery(result.query || "");
+      setGoogleAiAssisted(Boolean(result.aiAssisted));
     } catch (error) {
       setGoogleSearchError(error instanceof Error ? error.message : "Google could not search for this truck.");
     } finally {
@@ -766,6 +790,14 @@ export default function Home() {
     );
   }
 
+  const unlikelyGoogleMatchCount = googleCandidates.filter(
+    (candidate) => candidate.matchLevel === "unlikely",
+  ).length;
+  const visibleGoogleCandidates = googleCandidates.filter(
+    (candidate) => showUnlikelyGoogleMatches
+      || candidate.matchLevel !== "unlikely",
+  );
+
   return (
     <main className={`app-shell role-${user.role}`}>
       <header className="topbar">
@@ -821,13 +853,39 @@ export default function Home() {
       {outcomeVisit && outcomeTruck && ["admin", "manager"].includes(user.role) && <Modal title={`Record outcome for ${outcomeTruck.name}`} subtitle={`${new Date(`${outcomeVisit.visitDate}T12:00:00`).toLocaleDateString()} • ${formatTime(outcomeVisit.startTime)} – ${formatTime(outcomeVisit.endTime)}`} onClose={() => setOutcomeVisitId(null)}><OutcomeForm visit={outcomeVisit} onSubmit={submitVisitOutcome} /></Modal>}
       {googleSearchTruckId !== null && <Modal title={`Match ${data.trucks.find((truck) => truck.id === googleSearchTruckId)?.name || "truck"}`} subtitle="Choose the exact Google business listing. Nothing is saved until you select a match." onClose={() => { if (!googleSearchBusy) setGoogleSearchTruckId(null); }}>
         <div className="google-match-list">
+          <form className="google-search-form" onSubmit={(event) => { event.preventDefault(); void searchGooglePlaces(googleSearchTruckId, googleSearchTerms, googleSearchArea); }}>
+            <label>
+              <span>Business search</span>
+              <input value={googleSearchTerms} onChange={(event) => setGoogleSearchTerms(event.target.value)} maxLength={110} placeholder="Exact business name, phone, or other identifying detail" required disabled={googleSearchBusy} />
+              <small>Correct the name or add a home city, phone number, or other detail Google recognizes.</small>
+            </label>
+            <label>
+              <span>Search area <em>Optional</em></span>
+              <input value={googleSearchArea} onChange={(event) => setGoogleSearchArea(event.target.value)} maxLength={110} placeholder="Different city, ZIP, or address" disabled={googleSearchBusy} />
+              <small>Leave blank to search near the store. Enter an area if the truck is based somewhere else.</small>
+            </label>
+            <button className="primary" type="submit" disabled={googleSearchBusy}>{googleSearchBusy ? "Searching…" : "Search again"}</button>
+          </form>
           {googleSearchBusy && !googleCandidates.length && <div className="google-loading">Searching Google Maps…</div>}
           {googleSearchError && <div className="auth-error" role="alert">△ {googleSearchError}</div>}
-          {!googleSearchBusy && !googleSearchError && googleSearchQuery && <small>Search: {googleSearchQuery}</small>}
-          {!googleSearchBusy && !googleSearchError && !googleCandidates.length && <div className="google-empty"><strong>No confident matches found.</strong><p>Add or correct the full store address on the Location page, check the truck name, then try again.</p></div>}
-          {googleCandidates.map((candidate) => <article key={candidate.placeId} className="google-candidate">
-            <div><strong>{candidate.name || "Unnamed Google listing"}</strong><p>{candidate.address || "Address not shown"}</p><small>{candidate.rating === null ? "No Google rating" : `★ ${candidate.rating.toFixed(1)} from ${candidate.ratingCount.toLocaleString()} ratings`}</small></div>
-            <button className="primary" disabled={googleSearchBusy} onClick={() => void linkGooglePlace(googleSearchTruckId, candidate.placeId)}>Use this listing</button>
+          {!googleSearchBusy && !googleSearchError && googleSearchQuery && <small>Google searched: {googleSearchQuery}</small>}
+          {!googleSearchBusy && !googleSearchError && !googleCandidates.length && <div className="google-empty"><strong>No correct match yet.</strong><p>Change the business search or enter the truck&apos;s home city or ZIP above, then search again.</p></div>}
+          {googleAiAssisted && <div className="google-ai-note">
+            <span><strong>AI-assisted matching</strong><small>Likely matches are shown first. AI can be wrong, so nothing is connected automatically.</small></span>
+            {unlikelyGoogleMatchCount > 0 && <button className="text-button" type="button" onClick={() => setShowUnlikelyGoogleMatches((current) => !current)}>{showUnlikelyGoogleMatches ? "Hide" : "Show"} {unlikelyGoogleMatchCount} unlikely {unlikelyGoogleMatchCount === 1 ? "match" : "matches"}</button>}
+          </div>}
+          {!googleSearchBusy && googleAiAssisted && !visibleGoogleCandidates.length && unlikelyGoogleMatchCount > 0 && <div className="google-empty"><strong>AI did not find a plausible match.</strong><p>Change the search above or show the unlikely matches to review every Google result yourself.</p></div>}
+          {visibleGoogleCandidates.map((candidate) => <article key={candidate.placeId} className={`google-candidate google-candidate-${candidate.matchLevel || "unranked"}`}>
+            <div>
+              <div className="google-candidate-title"><strong>{candidate.name || "Unnamed Google listing"}</strong>{googleAiAssisted && candidate.matchLevel && <span className={`google-match-badge ${candidate.matchLevel}`}>{candidate.matchLevel === "likely" ? "AI likely match" : candidate.matchLevel === "possible" ? "AI possible" : "AI unlikely"}</span>}</div>
+              <p>{candidate.address || "Address not shown"}</p>
+              <small>{candidate.rating === null ? "No Google rating" : `★ ${candidate.rating.toFixed(1)} from ${candidate.ratingCount.toLocaleString()} ratings`}</small>
+              {googleAiAssisted && candidate.matchReason && <small className="google-match-reason">{candidate.matchReason}</small>}
+            </div>
+            <div className="google-candidate-actions">
+              {candidate.mapsUri && <a className="secondary" href={candidate.mapsUri} target="_blank" rel="noreferrer">Check on Maps ↗</a>}
+              <button className="primary" disabled={googleSearchBusy} onClick={() => void linkGooglePlace(googleSearchTruckId, candidate.placeId)}>Use this listing</button>
+            </div>
           </article>)}
           <div className="google-attribution" translate="no">Google Maps</div>
         </div>
