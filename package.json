@@ -6,7 +6,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/apply-location-schedule-settings.mjs && vite",
+    "prebuild": "node scripts/apply-location-schedule-settings.mjs",
     "build": "vinext build",
     "start": "vinext start",
     "deploy": "npm run build && wrangler deploy",
