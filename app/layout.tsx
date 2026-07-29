@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import AppRuntime from "./AppRuntime";
 import DocumentIntakeRuntime from "./DocumentIntakeRuntime";
+import ExistingTruckDocumentsRuntime from "./ExistingTruckDocumentsRuntime";
 import TruckCommentsRuntime from "./TruckCommentsRuntime";
 import UiCopyRuntime from "./UiCopyRuntime";
 import "./globals.css";
@@ -41,6 +42,7 @@ export default function RootLayout({
         <AppRuntime>
           {children}
           <DocumentIntakeRuntime />
+          <ExistingTruckDocumentsRuntime />
           <TruckCommentsRuntime />
           <UiCopyRuntime />
         </AppRuntime>
