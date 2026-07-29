@@ -18,7 +18,6 @@ const COPY_REPLACEMENTS = new Map<string, string>([
   ["Create public schedule link", "Create Public Schedule Link"],
 
   // Main navigation and scheduling actions.
-  ["＋ Schedule Visit", "＋ Schedule Visit"],
   ["Schedule a food truck", "Schedule a Food Truck"],
   ["Create truck profile", "Create Truck Profile"],
   ["Search again", "Search Again"],
@@ -34,6 +33,7 @@ const COPY_REPLACEMENTS = new Map<string, string>([
   ["Google rating", "Google Rating"],
   ["Review summary", "Review Summary"],
   ["No truck profiles yet", "No Truck Profiles Yet"],
+  ["No available match", "No Available Match"],
   ["Change logo", "Change Logo"],
   ["＋ Add logo", "＋ Add Logo"],
   ["Remove logo", "Remove Logo"],
@@ -57,12 +57,21 @@ const COPY_REPLACEMENTS = new Map<string, string>([
   ["Save location profile", "Save Location Profile"],
 
   // Forms, dialogs, and recovery screens.
+  ["Accepted payment types", "Accepted Payment Types"],
   ["How reliability is averaged", "How Reliability Is Averaged"],
   ["Save outcome and recalculate", "Save Outcome and Recalculate"],
   ["Add to schedule", "Add to Schedule"],
-  ["Create truck profile", "Create Truck Profile"],
   ["That schedule view hit a bad record", "That Schedule View Hit a Bad Record"],
-  ["Reload Food Truck Admin", "Reload Food Truck Admin"],
+
+  // Public schedule and legal pages.
+  ["Schedule unavailable", "Schedule Unavailable"],
+  ["No upcoming visits", "No Upcoming Visits"],
+  ["Food truck", "Food Truck"],
+  ["Terms of use", "Terms of Use"],
+  ["Online ratings", "Online Ratings"],
+  ["Google business information", "Google Business Information"],
+  ["Account information", "Account Information"],
+  ["Google terms", "Google Terms"],
 ]);
 
 const SIMPLE_TEXT_SELECTOR = [
