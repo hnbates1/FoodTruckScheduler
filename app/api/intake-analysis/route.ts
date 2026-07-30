@@ -302,10 +302,12 @@ function openAiOutputText(result: unknown) {
 
 // openai-files-api-v2
 async function uploadOpenAiFile(apiKey: string, file: File) {
+  // openai-file-purpose-compat-v3
   const body = new FormData();
-  body.append("purpose", "user_data");
-  body.append("expires_after[anchor]", "created_at");
-  body.append("expires_after[seconds]", "3600");
+  // "assistants" is accepted by older and newer Files API deployments and
+  // remains valid when the resulting file_id is passed to the Responses API.
+  // Files are explicitly deleted in analyzeWithOpenAi's finally block.
+  body.append("purpose", "assistants");
   body.append("file", file, file.name);
   const response = await fetch("https://api.openai.com/v1/files", {
     method: "POST",
