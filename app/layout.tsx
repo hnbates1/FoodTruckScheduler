@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import AnalysisUploadCompressionRuntime from "./AnalysisUploadCompressionRuntime";
 import AppRuntime from "./AppRuntime";
 import DocumentIntakeRuntime from "./DocumentIntakeRuntime";
 import ExistingTruckDocumentsRuntime from "./ExistingTruckDocumentsRuntime";
@@ -43,6 +44,7 @@ export default function RootLayout({
       >
         <AppRuntime>
           {children}
+          <AnalysisUploadCompressionRuntime />
           <DocumentIntakeRuntime />
           <ExistingTruckDocumentsRuntime />
           <ScheduleExportRuntime />
