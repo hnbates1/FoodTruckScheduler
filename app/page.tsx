@@ -1007,9 +1007,12 @@ function TrafficCurveRow({
   timelineEnd: number;
 }) {
   if (!traffic && !loading) return null;
+  // traffic-store-hours-v1
+  const trafficStartHour = Math.max(0, Math.min(23, Math.floor(timelineStart / 60)));
+  const trafficEndHour = Math.max(trafficStartHour, Math.min(23, Math.ceil(timelineEnd / 60)));
   const values = Array.from(
-    { length: 11 },
-    (_, index) => traffic?.values?.[10 + index] ?? 0,
+    { length: trafficEndHour - trafficStartHour + 1 },
+    (_, index) => traffic?.values?.[trafficStartHour + index] ?? 0,
   );
   const linePath = traffic?.available ? trafficLinePath(values) : "";
   const areaPath = linePath
@@ -1017,8 +1020,8 @@ function TrafficCurveRow({
     : "";
   const peak = Math.max(...values);
   const timelineSpan = Math.max(60, timelineEnd - timelineStart);
-  const trafficPlotStart = Math.max(timelineStart, 600);
-  const trafficPlotEnd = Math.min(timelineEnd, 1200);
+  const trafficPlotStart = timelineStart;
+  const trafficPlotEnd = timelineEnd;
   const trafficPlotLeft = ((trafficPlotStart - timelineStart) / timelineSpan) * 100;
   const trafficPlotWidth = Math.max(0, ((trafficPlotEnd - trafficPlotStart) / timelineSpan) * 100);
   const sourceLabel = traffic?.source === "previous"
@@ -1042,7 +1045,7 @@ function TrafficCurveRow({
         ? <span className="traffic-message">Loading typical traffic…</span>
         : traffic?.available
           ? <>
-            <svg style={{ left: `${trafficPlotLeft}%`, right: "auto", width: `${trafficPlotWidth}%` }} viewBox="0 0 1000 72" preserveAspectRatio="none" role="img" aria-label={`Estimated typical location traffic from 10 AM to 8 PM; peak relative activity ${peak} out of 100`}>
+            <svg style={{ left: `${trafficPlotLeft}%`, right: "auto", width: `${trafficPlotWidth}%` }} viewBox="0 0 1000 72" preserveAspectRatio="none" role="img" aria-label={`Estimated typical location traffic from ${formatTime(timeFromMinutes(timelineStart))} to ${formatTime(timeFromMinutes(timelineEnd))}; peak relative activity ${peak} out of 100`}>
               <defs>
                 <linearGradient id="traffic-area-fill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#a8d86e" stopOpacity=".34" />
