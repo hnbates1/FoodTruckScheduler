@@ -447,6 +447,23 @@ export default function Home() {
   const outcomeVisit = data.visits.find((visit) => visit.id === outcomeVisitId);
   const outcomeTruck = data.trucks.find((truck) => truck.id === outcomeVisit?.truckId);
 
+  /* next-scheduled-truck-card-v1 */
+  const nextScheduled = useMemo(() => {
+    const now = new Date();
+    const nextVisit = data.visits
+      .filter((visit) => visit.status.toLowerCase() !== "cancelled")
+      .map((visit) => ({ visit, startsAt: new Date(`${visit.visitDate}T${visit.startTime}:00`) }))
+      .filter(({ startsAt }) => startsAt.getTime() >= now.getTime())
+      .sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime())[0];
+    if (!nextVisit) return null;
+    const truck = data.trucks.find((item) => item.id === nextVisit.visit.truckId);
+    if (!truck) return null;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const visitDay = new Date(nextVisit.startsAt.getFullYear(), nextVisit.startsAt.getMonth(), nextVisit.startsAt.getDate());
+    const daysAway = Math.round((visitDay.getTime() - today.getTime()) / 86400000);
+    return { ...nextVisit, truck, daysAway };
+  }, [data.trucks, data.visits]);
+
   const overlaps = useMemo(() => dayVisits.flatMap((a, index) =>
     dayVisits.slice(index + 1).filter((b) => {
       const aTruck = data.trucks.find((truck) => truck.id === a.truckId);
@@ -906,6 +923,7 @@ export default function Home() {
             <div className="legend"><span><i className="blue-swatch" />Confirmed</span><span><i className="green-swatch" />Available</span><span><i className="stripe-swatch" />Conflict</span><span><i className="amber-swatch" />Documents expiring</span><span><i className="traffic-swatch" />Typical location traffic</span></div>
           </section>
           <aside className="right-rail">
+            <NextScheduledTruck next={nextScheduled} onView={(visitDate) => { setSelectedDate(new Date(`${visitDate}T12:00:00`)); setView("schedule"); }} onSchedule={() => setView("schedule")} />
             <TruckProfile truck={selectedTruck} onView={() => setView("trucks")} />
             <Assistant recommendation={recommendations[0]} selectedDate={selectedDate} onSchedule={(truckId) => openVisitModal(dateKey(selectedDate), "11:00", truckId)} />
           </aside>
@@ -1162,6 +1180,21 @@ function ScheduleBoard({ visits, trucks, overlaps, visitDate, operatingHours, tr
       </div>
     </div>}
   </div>;
+}
+
+function NextScheduledTruck({ next, onView, onSchedule }: { next: { visit: Visit; startsAt: Date; truck: Truck; daysAway: number } | null; onView: (visitDate: string) => void; onSchedule: () => void }) {
+  const when = next?.daysAway === 0 ? "Today" : next?.daysAway === 1 ? "Tomorrow" : next ? `In ${next.daysAway} days` : "";
+  return <article className="rail-card next-truck-card">
+    <div className="card-title"><h2>Next Scheduled Truck</h2><span>▰</span></div>
+    {next ? <>
+      <div className="profile-head"><TruckAvatar truck={next.truck} large /><div><h3>{next.truck.name}</h3><p>{next.truck.cuisine}</p><strong className="rating">{when}</strong></div></div>
+      <dl><div><dt>Date</dt><dd>{next.startsAt.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</dd></div><div><dt>Time</dt><dd>{formatTime(next.visit.startTime)} – {formatTime(next.visit.endTime)}</dd></div><div><dt>Status</dt><dd>{next.visit.status}</dd></div></dl>
+      <button className="primary wide" type="button" onClick={() => onView(next.visit.visitDate)}>View on Schedule →</button>
+    </> : <>
+      <div className="ai-box"><h3>No upcoming truck scheduled</h3><p>There are no future, non-cancelled visits anywhere on the schedule.</p></div>
+      <button className="secondary wide" type="button" onClick={onSchedule}>Open Schedule</button>
+    </>}
+  </article>;
 }
 
 function TruckProfile({ truck, onView }: { truck: Truck; onView: () => void }) {
