@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "prepare:source": "node scripts/apply-location-schedule-settings.mjs && node scripts/apply-export-and-grid-fixes.mjs && node scripts/add-stored-document-analysis.mjs && node scripts/fix-openai-document-analysis.mjs && node scripts/fix-openai-file-upload-v2.mjs && node scripts/fix-openai-file-purpose-v3.mjs && node scripts/add-analysis-runtime-diagnostics.mjs && node scripts/fix-upload-analysis-diagnostics-v2.mjs && node scripts/fix-traffic-store-hours.mjs && node scripts/add-next-scheduled-truck-card.mjs && node scripts/add-analysis-upload-compression.mjs && node scripts/fix-all-ai-image-uploads-v2.mjs && node scripts/fix-create-truck-analysis-compression.mjs",
+    "prepare:source": "node scripts/fix-create-truck-analysis-compression.mjs",
     "dev": "npm run prepare:source && vite",
     "prebuild": "npm run prepare:source",
     "build": "vinext build",
