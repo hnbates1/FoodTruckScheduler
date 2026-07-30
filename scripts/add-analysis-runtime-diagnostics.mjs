@@ -42,20 +42,33 @@ async function analyzerStatus() {
   }
 }`
   );
+}
 
-  client = client.replace(
+client = client.replace(
+`      if (!analysisResponse.ok) {
+        setError(\`The files were saved, but AI analysis failed: \${await errorMessage(analysisResponse, "The documents could not be analyzed.")}\`);
+        return;
+      }`,
+`      if (!analysisResponse.ok) {
+        const detail = await errorMessage(analysisResponse, "The documents could not be analyzed.");
+        setError(\`The files were saved, but AI analysis failed: \${detail}\${await analyzerStatus()}\`);
+        return;
+      }`
+);
+
+client = client.replace(
 `      if (!response.ok) throw new Error(await errorMessage(response, "The stored documents could not be analyzed."));`,
 `      if (!response.ok) {
         const detail = await errorMessage(response, "The stored documents could not be analyzed.");
         throw new Error(detail + await analyzerStatus());
       }`
-  );
-  await writeFile(CLIENT_PATH, client);
-}
+);
+
+await writeFile(CLIENT_PATH, client);
 
 let route = await readFile(ROUTE_PATH, "utf8");
 if (!route.includes(ROUTE_MARKER)) {
-  const insertion = `// ${ROUTE_MARKER}\nexport async function GET(request: Request) {\n  const session = await requireSession(request);\n  if (\"response\" in session) return session.response;\n  const { env } = await import(\"cloudflare:workers\");\n  const bindings = env as unknown as RuntimeBindings;\n  return json({\n    routeVersion: \"openai-files-api-v2\",\n    openAiConfigured: Boolean(String(bindings.OPENAI_API_KEY || \"\").trim()),\n    workersAiConfigured: Boolean(bindings.AI),\n  });\n}\n\n`;
+  const insertion = `// ${ROUTE_MARKER}\nexport async function GET(request: Request) {\n  const session = await requireSession(request);\n  if ("response" in session) return session.response;\n  const { env } = await import("cloudflare:workers");\n  const bindings = env as unknown as RuntimeBindings;\n  return json({\n    routeVersion: "openai-files-api-v2",\n    openAiConfigured: Boolean(String(bindings.OPENAI_API_KEY || "").trim()),\n    workersAiConfigured: Boolean(bindings.AI),\n  });\n}\n\n`;
   route = route.replace("export async function POST(request: Request) {", insertion + "export async function POST(request: Request) {");
   await writeFile(ROUTE_PATH, route);
 }
