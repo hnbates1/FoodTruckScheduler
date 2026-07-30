@@ -114,6 +114,7 @@ async function errorMessage(response: Response, fallback: string) {
   }
 }
 
+// upload-analysis-diagnostics-v2
 async function analyzerStatus() {
   try {
     const response = await fetch("/api/intake-analysis", { cache: "no-store" });
@@ -284,7 +285,8 @@ export default function ExistingTruckDocumentsRuntime() {
       files.forEach((file) => analysisBody.append("files", file));
       const analysisResponse = await fetch("/api/intake-analysis", { method: "POST", body: analysisBody });
       if (!analysisResponse.ok) {
-        setError(`The files were saved, but AI analysis failed: ${await errorMessage(analysisResponse, "The documents could not be analyzed.")}`);
+        const detail = await errorMessage(analysisResponse, "The documents could not be analyzed.");
+        setError(`The files were saved, but AI analysis failed: ${detail}${await analyzerStatus()}`);
         return;
       }
       const result = await analysisResponse.json() as IntakeAnalysis;
