@@ -1,0 +1,48 @@
+name: Materialize AI Upload Compression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/add-analysis-upload-compression.mjs"
+      - "package.json"
+      - ".github/workflows/materialize-analysis-upload-compression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-analysis-upload-compression
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+
+      - name: Apply upload compression patch
+        run: node scripts/add-analysis-upload-compression.mjs
+
+      - name: Commit generated application source
+        shell: bash
+        run: |
+          if git diff --quiet -- app/page.tsx; then
+            echo "Application source is already materialized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git commit -m "Materialize AI upload compression"
+          git push
