@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "prepare:source": "node scripts/fix-create-truck-analysis-compression.mjs && node scripts/fix-ai-provider-analysis-v4.mjs",
+    "prepare:source": "node scripts/fix-create-truck-analysis-compression.mjs",
     "dev": "npm run prepare:source && vite",
     "prebuild": "npm run prepare:source",
     "build": "vinext build",
