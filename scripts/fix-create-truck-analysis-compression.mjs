@@ -3,22 +3,35 @@ import { readFile, writeFile } from "node:fs/promises";
 const RUNTIME_PATH = new URL("../app/DocumentIntakeRuntime.tsx", import.meta.url);
 const ROUTE_PATH = new URL("../app/api/intake-analysis/route.ts", import.meta.url);
 const COMPRESSION_MARKER = "// create-truck-analysis-compression-v1";
+const REQUEST_LIMIT_MARKER = "// intake-request-size-guard-v1";
 const AVAILABILITY_MARKER = "// intake-availability-extraction-v1";
 
 let runtime = await readFile(RUNTIME_PATH, "utf8");
 
 if (!runtime.includes(COMPRESSION_MARKER)) {
   const anchor = "function responseError(response: Response) {";
-  const helper = `${COMPRESSION_MARKER}\nconst INTAKE_IMAGE_TARGET_BYTES = 700_000;\nconst INTAKE_IMAGE_MAX_DIMENSION = 1500;\n\nasync function prepareIntakeFile(file: File): Promise<File> {\n  if (!file.type.startsWith(\"image/\") || file.size <= INTAKE_IMAGE_TARGET_BYTES) return file;\n  const bitmap = await createImageBitmap(file);\n  try {\n    let width = bitmap.width;\n    let height = bitmap.height;\n    const scale = Math.min(1, INTAKE_IMAGE_MAX_DIMENSION / Math.max(width, height));\n    width = Math.max(1, Math.round(width * scale));\n    height = Math.max(1, Math.round(height * scale));\n    let blob: Blob | null = null;\n    let quality = 0.8;\n    for (let attempt = 0; attempt < 7; attempt += 1) {\n      const canvas = document.createElement(\"canvas\");\n      canvas.width = width;\n      canvas.height = height;\n      const context = canvas.getContext(\"2d\");\n      if (!context) return file;\n      context.drawImage(bitmap, 0, 0, width, height);\n      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, \"image/jpeg\", quality));\n      if (blob && blob.size <= INTAKE_IMAGE_TARGET_BYTES) break;\n      quality = Math.max(0.45, quality - 0.08);\n      width = Math.max(640, Math.round(width * 0.82));\n      height = Math.max(640, Math.round(height * 0.82));\n    }\n    if (!blob || blob.size >= file.size) return file;\n    const base = file.name.replace(/\\.[^.]+$/, \"\") || \"document\";\n    return new File([blob], \`\${base}.jpg\`, { type: \"image/jpeg\", lastModified: file.lastModified });\n  } finally {\n    bitmap.close();\n  }\n}\n\n`;
+  const helper = `${COMPRESSION_MARKER}\nconst INTAKE_IMAGE_TARGET_BYTES = 180_000;\nconst INTAKE_IMAGE_MAX_DIMENSION = 1200;\nconst INTAKE_REQUEST_TARGET_BYTES = 900_000;\n\nasync function prepareIntakeFile(file: File): Promise<File> {\n  if (!file.type.startsWith(\"image/\") || file.size <= INTAKE_IMAGE_TARGET_BYTES) return file;\n  const bitmap = await createImageBitmap(file);\n  try {\n    let width = bitmap.width;\n    let height = bitmap.height;\n    const scale = Math.min(1, INTAKE_IMAGE_MAX_DIMENSION / Math.max(width, height));\n    width = Math.max(1, Math.round(width * scale));\n    height = Math.max(1, Math.round(height * scale));\n    let blob: Blob | null = null;\n    let quality = 0.76;\n    for (let attempt = 0; attempt < 9; attempt += 1) {\n      const canvas = document.createElement(\"canvas\");\n      canvas.width = width;\n      canvas.height = height;\n      const context = canvas.getContext(\"2d\");\n      if (!context) return file;\n      context.drawImage(bitmap, 0, 0, width, height);\n      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, \"image/jpeg\", quality));\n      if (blob && blob.size <= INTAKE_IMAGE_TARGET_BYTES) break;\n      quality = Math.max(0.4, quality - 0.07);\n      width = Math.max(520, Math.round(width * 0.82));\n      height = Math.max(520, Math.round(height * 0.82));\n    }\n    if (!blob || blob.size >= file.size) return file;\n    const base = file.name.replace(/\\.[^.]+$/, \"\") || \"document\";\n    return new File([blob], \`\${base}.jpg\`, { type: \"image/jpeg\", lastModified: file.lastModified });\n  } finally {\n    bitmap.close();\n  }\n}\n\n`;
   if (!runtime.includes(anchor)) throw new Error("Could not locate responseError helper.");
   runtime = runtime.replace(anchor, helper + anchor);
 }
 
+runtime = runtime
+  .replace("const INTAKE_IMAGE_TARGET_BYTES = 700_000;", "const INTAKE_IMAGE_TARGET_BYTES = 180_000;")
+  .replace("const INTAKE_IMAGE_MAX_DIMENSION = 1500;", "const INTAKE_IMAGE_MAX_DIMENSION = 1200;");
+if (!runtime.includes("const INTAKE_REQUEST_TARGET_BYTES")) {
+  runtime = runtime.replace(
+    "const INTAKE_IMAGE_MAX_DIMENSION = 1200;",
+    "const INTAKE_IMAGE_MAX_DIMENSION = 1200;\nconst INTAKE_REQUEST_TARGET_BYTES = 900_000;",
+  );
+}
+
 const uploadBefore = `      const body = new FormData();\n      files.forEach((file) => body.append("files", file));\n      const response = await fetch("/api/intake-analysis", { method: "POST", body });`;
-const uploadAfter = `      const body = new FormData();\n      for (const file of files) body.append("files", await prepareIntakeFile(file));\n      const response = await fetch("/api/intake-analysis", { method: "POST", body });`;
-if (!runtime.includes(uploadAfter)) {
-  if (!runtime.includes(uploadBefore)) throw new Error("Could not locate create-truck intake upload block.");
-  runtime = runtime.replace(uploadBefore, uploadAfter);
+const compressedUpload = `      const body = new FormData();\n      for (const file of files) body.append("files", await prepareIntakeFile(file));\n      const response = await fetch("/api/intake-analysis", { method: "POST", body });`;
+const guardedUpload = `      ${REQUEST_LIMIT_MARKER}\n      const preparedFiles: File[] = [];\n      for (const file of files) preparedFiles.push(await prepareIntakeFile(file));\n      const preparedBytes = preparedFiles.reduce((total, file) => total + file.size, 0);\n      if (preparedBytes > INTAKE_REQUEST_TARGET_BYTES) {\n        throw new Error(\`The selected documents are still too large after compression (\${Math.ceil(preparedBytes / 1024)} KB). Upload fewer documents at once or use smaller PDF/Word files.\`);\n      }\n      const body = new FormData();\n      preparedFiles.forEach((file) => body.append("files", file));\n      const response = await fetch("/api/intake-analysis", { method: "POST", body });`;
+if (!runtime.includes(REQUEST_LIMIT_MARKER)) {
+  if (runtime.includes(compressedUpload)) runtime = runtime.replace(compressedUpload, guardedUpload);
+  else if (runtime.includes(uploadBefore)) runtime = runtime.replace(uploadBefore, guardedUpload);
+  else throw new Error("Could not locate create-truck intake upload block.");
 }
 
 if (!runtime.includes(AVAILABILITY_MARKER)) {
