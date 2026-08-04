@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const PAGE_PATH = new URL("../app/page.tsx", import.meta.url);
 const API_PATH = new URL("../app/api/data/route.ts", import.meta.url);
-const MARKER = "// truck-profile-editing-v1";
+const MARKER = "// truck-profile-editing-v2";
 
 let page = await readFile(PAGE_PATH, "utf8");
 
@@ -10,11 +10,6 @@ if (!page.includes(MARKER)) {
   page = page.replace(
     '  const [modal, setModal] = useState<"visit" | "truck" | null>(null);',
     '  const [modal, setModal] = useState<"visit" | "truck" | null>(null);\n  const [editingTruck, setEditingTruck] = useState<Truck | null>(null);\n  ' + MARKER,
-  );
-
-  page = page.replace(
-    '  async function submitTruck(event: FormEvent<HTMLFormElement>) {',
-    `  async function submitTruck(event: FormEvent<HTMLFormElement>) {`,
   );
 
   page = page.replace(
